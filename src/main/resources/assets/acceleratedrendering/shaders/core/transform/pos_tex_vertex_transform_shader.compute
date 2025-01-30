@@ -1,0 +1,85 @@
+#version 460 core
+
+struct Vertex {
+    float x;
+    float y;
+    float z;
+    float u0;
+    float v0;
+};
+
+struct VaryingData {
+    int mesh;
+    int sharing;
+    int color;
+    int light;
+    int overlay;
+};
+
+struct SharingData {
+    mat4 transform;
+    mat3 normal;
+    uint flags;
+};
+
+layout(local_size_x=1, local_size_y=1) in;
+
+layout(binding=0, std430) buffer VerticesIn {
+    Vertex verticesIn[];
+};
+
+layout(binding=1, std430) buffer VerticesOut {
+    Vertex verticesOut[];
+};
+
+layout(binding=2, std430) readonly buffer Sharings {
+    SharingData sharings[];
+};
+
+layout(binding=3, std430) readonly buffer Varyings {
+    VaryingData varyings[];
+};
+
+layout(binding=4, std430) readonly buffer Mesh {
+    Vertex meshVertices[];
+};
+
+void main() {
+    int index = int(gl_WorkGroupID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y + gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x);
+
+    VaryingData varyingData = varyings[index];
+    SharingData sharingData = varyingData.sharing != -1 ? sharings[varyingData.sharing] : SharingData(mat4(1.0), mat3(1.0), 0u);
+    Vertex vertex = varyingData.mesh != -1 ? meshVertices[varyingData.mesh] : verticesIn[index];
+
+    vec4 pos = vec4(vertex.x, vertex.y, vertex.z, 1.0);
+
+    // int normalZ = int((vertex.normal >> 16) & 0xFFu);
+    // int normalY = int((vertex.normal >> 8) & 0xFFu);
+    // int normalX = int((vertex.normal >> 0) & 0xFFu);
+
+    // if (normalX > 127) normalX -= 256;
+    // if (normalY > 127) normalY -= 256;
+    // if (normalZ > 127) normalZ -= 256;
+
+    // vec3 normal = vec3(normalX / 127.0, normalY / 127.0, normalZ / 127.0);
+
+    pos = sharingData.transform * pos;
+    // normal = normalize(sharingData.normal * normal);
+
+    // uint packedNormalX = uint(int(normal.x * 127.0) & 0xFF);
+    // uint packedNormalY = uint(int(normal.y * 127.0) & 0xFF);
+    // uint packedNormalZ = uint(int(normal.z * 127.0) & 0xFF);
+
+    verticesOut[index].x = pos.x;
+    verticesOut[index].y = pos.y;
+    verticesOut[index].z = pos.z;
+
+    verticesOut[index].u0 = vertex.u0;
+    verticesOut[index].v0 = vertex.v0;
+
+    // verticesOut[index].color = varyingData.color;
+    // verticesOut[index].uv1 = varyingData.overlay;
+    // verticesOut[index].uv2 = varyingData.light;
+
+    // verticesOut[index].normal = (packedNormalZ << 16) | (packedNormalY << 8) | (packedNormalX << 0);
+}

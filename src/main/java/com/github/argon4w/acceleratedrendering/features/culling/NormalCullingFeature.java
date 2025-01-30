@@ -8,7 +8,7 @@ import java.util.Deque;
 
 public class NormalCullingFeature {
 
-    private static final Deque<Boolean> CULLING_CONTROLLER_STACK = new ArrayDeque<>();
+    private static final Deque<FeatureStatus> CULLING_CONTROLLER_STACK = new ArrayDeque<>();
 
     public static boolean isEnabled() {
         return FeatureConfig.CONFIG.normalCullingFeatureStatus.get() == FeatureStatus.ENABLED;
@@ -19,23 +19,31 @@ public class NormalCullingFeature {
     }
 
     public static boolean shouldCull() {
-        return CULLING_CONTROLLER_STACK.isEmpty() || CULLING_CONTROLLER_STACK.peek();
+        return getCullingSetting() == FeatureStatus.ENABLED;
     }
 
     public static void disableCulling() {
-        CULLING_CONTROLLER_STACK.push(false);
+        CULLING_CONTROLLER_STACK.push(FeatureStatus.DISABLED);
     }
 
     public static void forceEnableCulling() {
-        CULLING_CONTROLLER_STACK.push(true);
+        CULLING_CONTROLLER_STACK.push(FeatureStatus.ENABLED);
     }
 
-    public static void forceSetCulling(boolean culling) {
+    public static void forceSetCulling(FeatureStatus culling) {
         CULLING_CONTROLLER_STACK.push(culling);
     }
 
     public static void resetCullingSetting() {
         CULLING_CONTROLLER_STACK.pop();
+    }
+
+    public static FeatureStatus getCullingSetting() {
+        return CULLING_CONTROLLER_STACK.isEmpty() ? getDefaultCullingSetting() : CULLING_CONTROLLER_STACK.peek();
+    }
+
+    public static FeatureStatus getDefaultCullingSetting() {
+        return FeatureConfig.CONFIG.normalCullingDefaultCulling.get();
     }
 
     public static void checkControllerState() {

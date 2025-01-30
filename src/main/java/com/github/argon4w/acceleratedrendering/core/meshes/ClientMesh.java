@@ -2,9 +2,7 @@ package com.github.argon4w.acceleratedrendering.core.meshes;
 
 import com.github.argon4w.acceleratedrendering.core.buffers.builders.IVertexConsumerExtension;
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.IClientBuffer;
-import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.RenderType;
 
 import java.nio.ByteBuffer;
@@ -43,7 +41,7 @@ public class ClientMesh implements IMesh {
 
         @Override
         public MeshCollector newMeshCollector(RenderType key) {
-            return MeshCollector.create(
+            return new MeshCollector(
                     key,
                     new SimpleClientBuffer(),
                     0

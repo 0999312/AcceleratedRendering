@@ -1,7 +1,7 @@
 package com.github.argon4w.acceleratedrendering.features.culling;
 
-import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgramSelector;
 import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgram;
+import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgramSelector;
 import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.RenderType;
@@ -36,13 +36,13 @@ public class NormalCullingProgramSelector implements ICullingProgramSelector {
     }
 
     @Override
-    public ICullingProgram select(RenderType renderType, VertexFormat vertexFormat) {
+    public ICullingProgram select(RenderType renderType) {
         if (!NormalCullingFeature.isEnabled()) {
-            return parent.select(renderType, vertexFormat);
+            return parent.select(renderType);
         }
 
-        if (this.vertexFormat != vertexFormat) {
-            return parent.select(renderType, vertexFormat);
+        if (this.vertexFormat != renderType.format) {
+            return parent.select(renderType);
         }
 
         if (NormalCullingFeature.shouldIgnoreCullState()) {
@@ -53,7 +53,7 @@ public class NormalCullingProgramSelector implements ICullingProgramSelector {
             return program;
         }
 
-        return parent.select(renderType, vertexFormat);
+        return parent.select(renderType);
     }
 
     @Override

@@ -4,7 +4,6 @@ import com.github.argon4w.acceleratedrendering.core.buffers.builders.IVertexCons
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.EmptyServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.MappedBuffer;
-import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import net.minecraft.client.renderer.RenderType;
@@ -46,16 +45,17 @@ public class ServerMesh implements IMesh {
         }
 
         @Override
-        public IMesh build(MeshCollector meshCollector) {
+        public IMesh build(MeshCollector collector) {
+            int vertexCount = collector.getVertexCount();
 
-            if (meshCollector.getVertexCount() == 0) {
+            if (vertexCount == 0) {
                 return EmptyMesh.INSTANCE;
             }
 
             return new ServerMesh(
-                    meshCollector.getKey(),
-                    meshCollector.getVertexCount(),
-                    meshCollector.getOffset()
+                    collector.getKey(),
+                    vertexCount,
+                    collector.getOffset()
             );
         }
 
@@ -69,7 +69,7 @@ public class ServerMesh implements IMesh {
                 storageBuffers.put(vertexFormat, buffer);
             }
 
-            return MeshCollector.create(
+            return new MeshCollector(
                     key,
                     buffer,
                     (int) buffer.getPosition()
