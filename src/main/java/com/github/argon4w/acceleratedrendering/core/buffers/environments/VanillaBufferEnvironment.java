@@ -1,9 +1,10 @@
 package com.github.argon4w.acceleratedrendering.core.buffers.environments;
 
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.IServerBuffer;
-import com.github.argon4w.acceleratedrendering.core.gl.programs.Program;
+import com.github.argon4w.acceleratedrendering.core.gl.programs.ComputeProgram;
 import com.github.argon4w.acceleratedrendering.core.meshes.ServerMesh;
-import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgram;
+import com.github.argon4w.acceleratedrendering.core.programs.EmptyProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.IProgramDispatcher;
 import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgramSelector;
 import com.github.argon4w.acceleratedrendering.core.programs.transform.ITransformProgramSelector;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -25,6 +26,16 @@ public class VanillaBufferEnvironment implements IBufferEnvironment {
     }
 
     @Override
+    public void uploadSharings(long address) {
+
+    }
+
+    @Override
+    public void uploadVertex(long address) {
+
+    }
+
+    @Override
     public void setupBufferState() {
         vertexFormat.setupBufferState();
     }
@@ -35,13 +46,18 @@ public class VanillaBufferEnvironment implements IBufferEnvironment {
     }
 
     @Override
-    public Program selectTransformProgram() {
-        return transformProgramSelector.select(vertexFormat);
+    public ComputeProgram selectTransformProgram() {
+        return transformProgramSelector.select();
     }
 
     @Override
-    public ICullingProgram selectCullProgram(RenderType renderType) {
+    public IProgramDispatcher selectCullProgramDispatcher(RenderType renderType) {
         return cullingProgramSelector.select(renderType);
+    }
+
+    @Override
+    public IProgramDispatcher selectProcessingProgramDispatcher(VertexFormat.Mode mode) {
+        return EmptyProgramDispatcher.INSTANCE;
     }
 
     @Override

@@ -1,12 +1,14 @@
 package com.github.argon4w.acceleratedrendering.core.buffers.accelerated;
 
 import com.github.argon4w.acceleratedrendering.CoreFeature;
-import com.github.argon4w.acceleratedrendering.core.buffers.SimpleResetPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.pools.ElementBufferPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.pools.SimpleResetPool;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.gl.buffers.CommandBuffer;
+import com.github.argon4w.acceleratedrendering.core.gl.VertexArray;
+import com.github.argon4w.acceleratedrendering.core.gl.buffers.ImmutableBuffer;
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.MappedBuffer;
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.MutableBuffer;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormatElement;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.IntBuffer;
@@ -16,8 +18,8 @@ import static org.lwjgl.opengl.GL46.*;
 public class AcceleratedBufferSetPool {
 
     private final IBufferEnvironment bufferEnvironment;
-    private final int size;
     private final BufferSet[] bufferSets;
+    private final int size;
 
     public AcceleratedBufferSetPool(IBufferEnvironment bufferEnvironment) {
         this.bufferEnvironment = bufferEnvironment;
@@ -48,17 +50,15 @@ public class AcceleratedBufferSetPool {
 
     public class BufferSet {
 
-        private final SimpleResetPool<ElementBuffer> elementBufferPool;
-
+        private final ElementBufferPool elementBufferPool;
         private final MappedBuffer sharingBuffer;
         private final MappedBuffer varyingBuffer;
         private final MappedBuffer vertexBufferIn;
         private final MutableBuffer vertexBufferOut;
-        private final MutableBuffer indexBufferOut;
-        private final CommandBuffer commandBuffer;
+        private final MutableBuffer elementBufferOut;
+        private final ImmutableBuffer commandBuffer;
         private final IntBuffer holder;
-
-        private final int vaoHandle;
+        private final VertexArray vertexArray;
 
         private int sharing;
         private int element;
@@ -67,21 +67,15 @@ public class AcceleratedBufferSetPool {
         private long sync;
 
         public BufferSet() {
-            this.elementBufferPool = new SimpleResetPool<>(
-                    CoreFeature.getPooledElementBufferSize(),
-                    this::newElementBuffer,
-                    ElementBuffer::reset
-            );
-
+            this.elementBufferPool = new ElementBufferPool(this);
             this.sharingBuffer = new MappedBuffer(64L);
             this.varyingBuffer = new MappedBuffer(64L);
             this.vertexBufferIn = new MappedBuffer(64L);
             this.vertexBufferOut = new MutableBuffer(64L, GL_DYNAMIC_STORAGE_BIT);
-            this.indexBufferOut = new MutableBuffer(64L, GL_DYNAMIC_STORAGE_BIT);
-            this.commandBuffer = new CommandBuffer();
+            this.elementBufferOut = new MutableBuffer(64L, GL_DYNAMIC_STORAGE_BIT);
+            this.commandBuffer = new ImmutableBuffer(GL_DYNAMIC_STORAGE_BIT, new int[] {0, 1, 0, 0, 0});
             this.holder = MemoryUtil.memCallocInt(1);
-
-            this.vaoHandle = glCreateVertexArrays();
+            this.vertexArray = new VertexArray();
 
             this.sharing = -1;
             this.element = 0;
@@ -106,17 +100,18 @@ public class AcceleratedBufferSetPool {
             vertexBufferOut.bindBase(GL_SHADER_STORAGE_BUFFER, 1);
             sharingBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 2);
             varyingBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 3);
+            bufferEnvironment.getServerMeshBuffer().bindBase(GL_SHADER_STORAGE_BUFFER, 4);
         }
 
         public void bindCullingBuffers(long indexSize) {
-            indexBufferOut.resizeTo(indexSize);
+            elementBufferOut.resizeTo(indexSize);
             commandBuffer.bindBase(GL_ATOMIC_COUNTER_BUFFER, 0);
-            indexBufferOut.bindBase(GL_SHADER_STORAGE_BUFFER, 6);
+            elementBufferOut.bindBase(GL_SHADER_STORAGE_BUFFER, 6);
         }
 
         public void bindDrawBuffers() {
             vertexBufferOut.bind(GL_ARRAY_BUFFER);
-            indexBufferOut.bind(GL_ELEMENT_ARRAY_BUFFER);
+            elementBufferOut.bind(GL_ELEMENT_ARRAY_BUFFER);
             commandBuffer.bind(GL_DRAW_INDIRECT_BUFFER);
         }
 
@@ -133,6 +128,18 @@ public class AcceleratedBufferSetPool {
 
         public ElementBuffer getElementBuffer() {
             return elementBufferPool.get();
+        }
+
+        public int getOffset(VertexFormatElement element) {
+            return bufferEnvironment.getOffset(element);
+        }
+
+        public int getVertexSize() {
+            return bufferEnvironment.getVertexSize();
+        }
+
+        public int getSharingFlags() {
+            return bufferEnvironment.getSharingFlags();
         }
 
         public int getSharing() {
@@ -163,12 +170,20 @@ public class AcceleratedBufferSetPool {
             return varyingBuffer.reserve(5L * 4L * count);
         }
 
+        public void uploadSharings(long address) {
+            bufferEnvironment.uploadSharings(address);
+        }
+
+        public void uploadVertex(long address) {
+            bufferEnvironment.uploadVertex(address);
+        }
+
         public void bindVertexArray() {
-            glBindVertexArray(vaoHandle);
+            vertexArray.bindVertexArray();
         }
 
         public void resetVertexArray() {
-            glBindVertexArray(0);
+            vertexArray.unbindVertexArray();
         }
 
         public void setUsed() {

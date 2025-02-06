@@ -2,15 +2,17 @@ package com.github.argon4w.acceleratedrendering.core.buffers.accelerated;
 
 import com.github.argon4w.acceleratedrendering.core.buffers.builders.AcceleratedBufferBuilder;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.gl.programs.Program;
-import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgram;
+import com.github.argon4w.acceleratedrendering.core.utils.IntElementUtils;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.*;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
+import org.lwjgl.system.MemoryUtil;
 
 import java.util.Map;
 
@@ -72,7 +74,6 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
 
         builder = AcceleratedBufferBuilder.create(
                 elementBuffer.setMode(renderType.mode),
-                bufferEnvironment,
                 bufferSet,
                 renderType
         );
@@ -87,16 +88,8 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             return;
         }
 
-        Program transformProgram = bufferEnvironment.selectTransformProgram();
-        transformProgram.useProgram();
-
         bufferSet.bindTransformBuffers();
-        bufferEnvironment.getServerMeshBuffer().bindBase(GL_SHADER_STORAGE_BUFFER, 4);
-
-        glDispatchCompute(bufferSet.getVertexCount(), 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        transformProgram.resetProgram();
+        bufferEnvironment.selectTransformProgram().dispatch(bufferSet.getVertexCount());
 
         BufferUploader.reset();
         bufferSet.bindVertexArray();
@@ -110,32 +103,16 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             }
 
             VertexFormat.Mode mode = renderType.mode;
-            ICullingProgram program = bufferEnvironment.selectCullProgram(renderType);
+            int vertexCount = builder.getVertexCount();
 
-            program.useProgram();
-            program.uploadUniforms();
-
-            bufferSet.bindCullingBuffers(elementBuffer.getBufferSize());
             elementBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 5);
+            bufferSet.bindCullingBuffers(elementBuffer.getBufferSize());
 
-            int count = program.getCount(
-                    mode,
-                    elementBuffer,
-                    builder
-            );
-
-            glDispatchCompute(count, 1, 1);
-
-            glMemoryBarrier(
-                    GL_SHADER_STORAGE_BARRIER_BIT
-                            | GL_ATOMIC_COUNTER_BARRIER_BIT
-            );
-
-            program.resetProgram();
-
-            bufferSet.bindDrawBuffers();
+            bufferEnvironment.selectProcessingProgramDispatcher(mode).dispatch(mode, vertexCount);
+            bufferEnvironment.selectCullProgramDispatcher(renderType).dispatch(mode, vertexCount);
 
             renderType.setupRenderState();
+            bufferSet.bindDrawBuffers();
             bufferEnvironment.setupBufferState();
 
             ShaderInstance shader = RenderSystem.getShader();
@@ -144,19 +121,16 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
                     mode,
                     RenderSystem.getModelViewMatrix(),
                     RenderSystem.getProjectionMatrix(),
-                    Minecraft.getInstance().getWindow());
+                    Minecraft.getInstance().getWindow()
+            );
             shader.apply();
 
             glDrawElementsIndirect(
                     mode.asGLMode,
-                    VertexFormat.IndexType.INT.asGLType,
-                    0
+                    IntElementUtils.TYPE,
+                    MemoryUtil.NULL
             );
-
-            glMemoryBarrier(
-                    GL_ELEMENT_ARRAY_BARRIER_BIT
-                            | GL_COMMAND_BARRIER_BIT
-            );
+            glMemoryBarrier(GL_ELEMENT_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
 
             shader.clear();
             renderType.clearRenderState();

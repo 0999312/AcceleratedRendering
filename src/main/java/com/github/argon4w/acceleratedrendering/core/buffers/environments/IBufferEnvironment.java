@@ -1,8 +1,8 @@
 package com.github.argon4w.acceleratedrendering.core.buffers.environments;
 
 import com.github.argon4w.acceleratedrendering.core.gl.buffers.IServerBuffer;
-import com.github.argon4w.acceleratedrendering.core.gl.programs.Program;
-import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgram;
+import com.github.argon4w.acceleratedrendering.core.gl.programs.ComputeProgram;
+import com.github.argon4w.acceleratedrendering.core.programs.IProgramDispatcher;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
@@ -11,10 +11,13 @@ import net.minecraft.client.renderer.RenderType;
 public interface IBufferEnvironment {
 
     void setupBufferState();
-    IServerBuffer getServerMeshBuffer();
-    Program selectTransformProgram();
+    void uploadSharings(long address);
+    void uploadVertex(long address);
     boolean isAccelerated(VertexFormat vertexFormat);
-    ICullingProgram selectCullProgram(RenderType renderType);
+    IServerBuffer getServerMeshBuffer();
+    ComputeProgram selectTransformProgram();
+    IProgramDispatcher selectCullProgramDispatcher(RenderType renderType);
+    IProgramDispatcher selectProcessingProgramDispatcher(VertexFormat.Mode mode);
     VertexFormat getVertexFormat(RenderType renderType);
     int getOffset(VertexFormatElement element);
     int getSharingFlags();
