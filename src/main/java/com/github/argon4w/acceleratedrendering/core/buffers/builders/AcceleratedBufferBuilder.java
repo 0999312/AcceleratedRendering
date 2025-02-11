@@ -1,8 +1,9 @@
 package com.github.argon4w.acceleratedrendering.core.buffers.builders;
 
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.AcceleratedBufferSetPool;
-import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.ElementBuffer;
+import com.github.argon4w.acceleratedrendering.core.gl.buffers.MappedBuffer;
 import com.github.argon4w.acceleratedrendering.core.utils.ByteBufferUtils;
+import com.github.argon4w.acceleratedrendering.core.utils.IntElementUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -12,17 +13,15 @@ import net.minecraft.util.FastColor;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Set;
 
-public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVertexConsumerExtension {
+public class AcceleratedBufferBuilder implements VertexConsumer, IVertexConsumerExtension {
 
-    private static final boolean LE = (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN);
-
-    private final ElementBuffer elementBuffer;
+    private final MappedBuffer elementBuffer;
     private final AcceleratedBufferSetPool.BufferSet bufferSet;
     private final RenderType renderType;
     private final VertexFormat.Mode mode;
+    private final int polygonSize;
 
     private final long posOffset;
     private final long colorOffset;
@@ -40,7 +39,7 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
     private int sharing;
 
     public AcceleratedBufferBuilder(
-            ElementBuffer elementBuffer,
+            MappedBuffer elementBuffer,
             AcceleratedBufferSetPool.BufferSet bufferSet,
             RenderType renderType
 
@@ -48,7 +47,8 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
         this.elementBuffer = elementBuffer;
         this.bufferSet = bufferSet;
         this.renderType = renderType;
-        this.mode = renderType.mode;
+        this.mode = this.renderType.mode;
+        this.polygonSize = this.mode.primitiveLength;
 
         this.posOffset = bufferSet.getOffset(VertexFormatElement.POSITION);
         this.colorOffset = bufferSet.getOffset(VertexFormatElement.COLOR);
@@ -66,23 +66,41 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
         this.sharing = -1;
     }
 
-    public abstract void putRgba(long ptr, int color);
-    public abstract void putAbgr(long ptr, int color);
-    public abstract void putPackedUv(long ptr, int packedUv);
-
-    @Override
-    public VertexConsumer addVertex(PoseStack.Pose pPose, float pX, float pY, float pZ) {
-        beginTransform(pPose);
-        return addVertex(pX, pY, pZ);
+    private void putElements(int size) {
+        IntElementUtils.putElements(
+                mode,
+                elementBuffer,
+                bufferSet.getElement(size),
+                size
+        );
     }
 
     @Override
-    public VertexConsumer addVertex(float pX, float pY, float pZ) {
+    public VertexConsumer addVertex(
+            PoseStack.Pose pPose,
+            float pX,
+            float pY,
+            float pZ
+    ) {
+        beginTransform(pPose);
+        return addVertex(
+                pX,
+                pY,
+                pZ
+        );
+    }
+
+    @Override
+    public VertexConsumer addVertex(
+            float pX,
+            float pY,
+            float pZ
+    ) {
         vertexCount ++;
         elementCount ++;
 
-        if (elementCount >= mode.primitiveLength) {
-            elementBuffer.reserveElements(mode.primitiveLength);
+        if (elementCount >= polygonSize) {
+            putElements(polygonSize);
             elementCount = 0;
         }
 
@@ -91,17 +109,22 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
         MemoryUtil.memPutFloat(vertex + posOffset + 0L, pX);
         MemoryUtil.memPutFloat(vertex + posOffset + 4L, pY);
         MemoryUtil.memPutFloat(vertex + posOffset + 8L, pZ);
-        bufferSet.uploadVertex(vertex);
+        bufferSet.addExtraVertex(vertex);
 
         varying = bufferSet.reserveVarying();
-        MemoryUtil.memPutInt(varying + 0 * 4L, -1);
+        MemoryUtil.memPutInt(varying + 0 * 4L, 0);
         MemoryUtil.memPutInt(varying + 1 * 4L, sharing);
 
         return this;
     }
 
     @Override
-    public VertexConsumer setColor(int pRed, int pGreen, int pBlue, int pAlpha) {
+    public VertexConsumer setColor(
+            int pRed,
+            int pGreen,
+            int pBlue,
+            int pAlpha
+    ) {
         if (colorOffset == -1) {
             return this;
         }
@@ -167,7 +190,12 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
     }
 
     @Override
-    public VertexConsumer setNormal(PoseStack.Pose pPose, float pNormalX, float pNormalY, float pNormalZ) {
+    public VertexConsumer setNormal(
+            PoseStack.Pose pPose,
+            float pNormalX,
+            float pNormalY,
+            float pNormalZ
+    ) {
         if (transform == -1) {
             return VertexConsumer.super.setNormal(
                     pPose,
@@ -189,7 +217,11 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
     }
 
     @Override
-    public VertexConsumer setNormal(float pNormalX, float pNormalY, float pNormalZ) {
+    public VertexConsumer setNormal(
+            float pNormalX,
+            float pNormalY,
+            float pNormalZ
+    ) {
         if (normalOffset == -1) {
             return this;
         }
@@ -222,8 +254,8 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
         vertexCount++;
         elementCount ++;
 
-        if (elementCount >= mode.primitiveLength) {
-            elementBuffer.reserveElements(mode.primitiveLength);
+        if (elementCount >= polygonSize) {
+            putElements(polygonSize);
             elementCount = 0;
         }
 
@@ -232,7 +264,7 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
         MemoryUtil.memPutFloat(vertex + posOffset + 0L, pX);
         MemoryUtil.memPutFloat(vertex + posOffset + 4L, pY);
         MemoryUtil.memPutFloat(vertex + posOffset + 8L, pZ);
-        bufferSet.uploadVertex(vertex);
+        bufferSet.addExtraVertex(vertex);
 
         if (uv0Offset != -1) {
             MemoryUtil.memPutFloat(vertex + uv0Offset + 0L, pU);
@@ -247,11 +279,11 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
 
         long varying = bufferSet.reserveVarying();
 
-        MemoryUtil.memPutInt(varying + 0 * 4L, -1);
-        MemoryUtil.memPutInt(varying + 1 * 4L, -1);
-        putRgba(varying + 2 * 4L, pColor);
-        putPackedUv(varying + 3 * 4L, pPackedLight);
-        putPackedUv(varying + 4 * 4L, pPackedOverlay);
+        MemoryUtil.memPutInt(varying + 0L * 4L, 0);
+        MemoryUtil.memPutInt(varying + 1L * 4L, -1);
+        MemoryUtil.memPutInt(varying + 2L * 4L, FastColor.ABGR32.fromArgb32(pColor));
+        MemoryUtil.memPutInt(varying + 3L * 4L, pPackedLight);
+        MemoryUtil.memPutInt(varying + 4L * 4L, pPackedOverlay);
     }
 
     @Override
@@ -266,12 +298,15 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
 
         long normal = transform + 4L * 4L * 4L;
         long flags = normal + 4L * 3L * 4L;
-        long extra = flags + 4L;
+        long mesh = flags + 4L;
+        long extra = mesh + 4L;
 
         ByteBufferUtils.putMatrix4f(transform, pose.pose());
         ByteBufferUtils.putMatrix3x4f(normal, pose.normal());
         MemoryUtil.memPutInt(flags, bufferSet.getSharingFlags());
-        bufferSet.uploadSharings(extra);
+        MemoryUtil.memPutInt(mesh, -1);
+
+        bufferSet.addExtraSharings(extra);
     }
 
     @Override
@@ -290,23 +325,26 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
             int light,
             int overlay
     ) {
-        elementBuffer.reserveElements(size);
+        putElements(size);
         vertexCount += size;
 
         long vertex = bufferSet.reservePolygons(size);
         long varying = bufferSet.reserveVaryings(size);
         long length = (long) size * bufferSet.getVertexSize();
 
-        ByteBufferUtils.putByteBuffer(vertexBuffer, vertex, length);
+        ByteBufferUtils.putByteBuffer(
+                vertexBuffer,
+                vertex,
+                length
+        );
+
+        MemoryUtil.memPutInt(varying + 1L * 4L, sharing);
+        MemoryUtil.memPutInt(varying + 2L * 4L, FastColor.ABGR32.fromArgb32(color));
+        MemoryUtil.memPutInt(varying + 3L * 4L, light);
+        MemoryUtil.memPutInt(varying + 4L * 4L, overlay);
 
         for (int i = 0; i < size; i++) {
-            long address = varying + i * 5L * 4L;
-
-            MemoryUtil.memPutInt(address + 0 * 4L, -1);
-            MemoryUtil.memPutInt(address + 1 * 4L, sharing);
-            putRgba(address + 2 * 4L, color);
-            putPackedUv(address + 3 * 4L, light);
-            putPackedUv(address + 4 * 4L, overlay);
+            MemoryUtil.memPutInt(varying + i * 5L * 4L, i);
         }
     }
 
@@ -319,21 +357,22 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
             int light,
             int overlay
     ) {
-        elementBuffer.reserveElements(size);
+        putElements(size);
+
         bufferSet.reservePolygons(size);
         vertexCount += size;
 
-        int mesh = offset / bufferSet.getVertexSize();
         long varying = bufferSet.reserveVaryings(size);
+        long mesh = transform + 4L * 4L * 4L + 4L * 3L * 4L + 4L;
+
+        MemoryUtil.memPutInt(mesh, offset / bufferSet.getVertexSize());
+        MemoryUtil.memPutInt(varying + 1L * 4L, sharing);
+        MemoryUtil.memPutInt(varying + 2L * 4L, FastColor.ABGR32.fromArgb32(color));
+        MemoryUtil.memPutInt(varying + 3L * 4L, light);
+        MemoryUtil.memPutInt(varying + 4L * 4L, overlay);
 
         for (int i = 0; i < size; i++) {
-            long address = varying + i * 5L * 4L;
-
-            MemoryUtil.memPutInt(address + 0 * 4L, mesh + i);
-            MemoryUtil.memPutInt(address + 1 * 4L, sharing);
-            putRgba(address + 2 * 4L, color);
-            putPackedUv(address + 3 * 4L, light);
-            putPackedUv(address + 4 * 4L, overlay);
+            MemoryUtil.memPutInt(varying + i * 5L * 4L, i);
         }
     }
 
@@ -351,78 +390,7 @@ public abstract class AcceleratedBufferBuilder implements VertexConsumer, IVerte
         return vertexCount;
     }
 
-    public ElementBuffer getElementBuffer() {
+    public MappedBuffer getElementBuffer() {
         return elementBuffer;
-    }
-
-    public static AcceleratedBufferBuilder create(
-            ElementBuffer elementBuffer,
-            AcceleratedBufferSetPool.BufferSet bufferSet,
-            RenderType renderType
-    ) {
-        return LE
-                ? new LE(elementBuffer, bufferSet, renderType)
-                : new BE(elementBuffer, bufferSet, renderType);
-    }
-
-    public static class BE extends AcceleratedBufferBuilder {
-
-        private BE(
-                ElementBuffer elementBuffer,
-                AcceleratedBufferSetPool.BufferSet bufferSet,
-                RenderType renderType
-        ) {
-            super(
-                    elementBuffer,
-                    bufferSet,
-                    renderType
-            );
-        }
-
-        @Override
-        public void putRgba(long ptr, int color) {
-            putAbgr(ptr, FastColor.ABGR32.fromArgb32(color));
-        }
-
-        @Override
-        public void putAbgr(long ptr, int color) {
-            ByteBufferUtils.putReversedInt(ptr, color);
-        }
-
-        @Override
-        public void putPackedUv(long ptr, int packed) {
-            MemoryUtil.memPutShort(ptr, (short) (packed & 65535));
-            MemoryUtil.memPutShort(ptr + 2L, (short) (packed >> 16 & 65535));
-        }
-    }
-
-    public static class LE extends AcceleratedBufferBuilder {
-
-        private LE(
-                ElementBuffer elementBuffer,
-                AcceleratedBufferSetPool.BufferSet bufferSet,
-                RenderType renderType
-        ) {
-            super(
-                    elementBuffer,
-                    bufferSet,
-                    renderType
-            );
-        }
-
-        @Override
-        public void putRgba(long ptr, int color) {
-            putAbgr(ptr, FastColor.ABGR32.fromArgb32(color));
-        }
-
-        @Override
-        public void putAbgr(long ptr, int color) {
-            MemoryUtil.memPutInt(ptr, color);
-        }
-
-        @Override
-        public void putPackedUv(long ptr, int packed) {
-            MemoryUtil.memPutInt(ptr, packed);
-        }
     }
 }

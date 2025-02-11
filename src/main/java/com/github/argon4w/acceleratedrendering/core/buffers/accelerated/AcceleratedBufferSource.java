@@ -2,7 +2,7 @@ package com.github.argon4w.acceleratedrendering.core.buffers.accelerated;
 
 import com.github.argon4w.acceleratedrendering.core.buffers.builders.AcceleratedBufferBuilder;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.utils.IntElementUtils;
+import com.github.argon4w.acceleratedrendering.core.gl.buffers.MappedBuffer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -12,7 +12,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
-import org.lwjgl.system.MemoryUtil;
 
 import java.util.Map;
 
@@ -64,7 +63,7 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             return builder;
         }
 
-        ElementBuffer elementBuffer = bufferSet.getElementBuffer();
+        MappedBuffer elementBuffer = bufferSet.getElementBuffer();
 
         if (elementBuffer == null) {
             drawBuffers();
@@ -72,8 +71,8 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             elementBuffer = bufferSet.getElementBuffer();
         }
 
-        builder = AcceleratedBufferBuilder.create(
-                elementBuffer.setMode(renderType.mode),
+        builder = new AcceleratedBufferBuilder(
+                elementBuffer,
                 bufferSet,
                 renderType
         );
@@ -89,14 +88,14 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
         }
 
         bufferSet.bindTransformBuffers();
-        bufferEnvironment.selectTransformProgram().dispatch(bufferSet.getVertexCount());
+        bufferEnvironment.selectTransformProgramDispatcher().dispatch(bufferSet.getVertexCount());
 
-        BufferUploader.reset();
+        BufferUploader.invalidate();
         bufferSet.bindVertexArray();
 
         for (RenderType renderType : acceleratedBuilders.keySet()) {
             AcceleratedBufferBuilder builder = acceleratedBuilders.get(renderType);
-            ElementBuffer elementBuffer = builder.getElementBuffer();
+            MappedBuffer elementBuffer = builder.getElementBuffer();
 
             if (elementBuffer.getPosition() == 0) {
                 continue;
@@ -105,9 +104,7 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             VertexFormat.Mode mode = renderType.mode;
             int vertexCount = builder.getVertexCount();
 
-            elementBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 5);
-            bufferSet.bindCullingBuffers(elementBuffer.getBufferSize());
-
+            bufferSet.bindCullingBuffers(elementBuffer);
             bufferEnvironment.selectProcessingProgramDispatcher(mode).dispatch(mode, vertexCount);
             bufferEnvironment.selectCullProgramDispatcher(renderType).dispatch(mode, vertexCount);
 
@@ -127,8 +124,8 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
 
             glDrawElementsIndirect(
                     mode.asGLMode,
-                    IntElementUtils.TYPE,
-                    MemoryUtil.NULL
+                    GL_UNSIGNED_INT,
+                    0L
             );
             glMemoryBarrier(GL_ELEMENT_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
 

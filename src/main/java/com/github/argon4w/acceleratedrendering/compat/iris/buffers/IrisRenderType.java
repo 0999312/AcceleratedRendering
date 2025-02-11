@@ -1,4 +1,4 @@
-package com.github.argon4w.acceleratedrendering.compat.iris;
+package com.github.argon4w.acceleratedrendering.compat.iris.buffers;
 
 import com.google.common.base.Objects;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -29,10 +29,7 @@ public class IrisRenderType extends RenderType {
 
         this.renderType = renderType;
         this.vertexFormat = vertexFormat;
-        this.hashCode = Objects.hashCode(
-                renderType,
-                vertexFormat
-        );
+        this.hashCode = Objects.hashCode(renderType, vertexFormat);
     }
 
     @Override

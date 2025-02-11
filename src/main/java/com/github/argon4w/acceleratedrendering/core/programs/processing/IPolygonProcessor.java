@@ -1,14 +1,14 @@
 package com.github.argon4w.acceleratedrendering.core.programs.processing;
 
-import com.github.argon4w.acceleratedrendering.core.programs.IProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.IPolygonProgramDispatcher;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.neoforged.fml.ModLoader;
 
 public interface IPolygonProcessor {
 
-    IProgramDispatcher select(VertexFormat.Mode mode);
-    void uploadSharings(long address);
-    void uploadVertex(long address);
+    IPolygonProgramDispatcher select(VertexFormat.Mode mode);
+    void addExtraSharings(long address);
+    void addExtraVertex(long address);
 
      static IPolygonProcessor empty() {
         return EmptyPolygonProcessor.INSTANCE;

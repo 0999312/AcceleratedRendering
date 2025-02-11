@@ -5,12 +5,13 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 import org.apache.commons.lang3.tuple.Pair;
 
 public class FeatureConfig {
+
     public static final FeatureConfig CONFIG;
     public static final ModConfigSpec SPEC;
 
     public final ModConfigSpec.IntValue corePooledBufferSetSize;
     public final ModConfigSpec.IntValue corePooledElementBufferSize;
-    public final ModConfigSpec.ConfigValue<FeatureStatus> coreUseVanillaBatching;
+    public final ModConfigSpec.ConfigValue<FeatureStatus> coreForceTranslucentAcceleration;
 
     public final ModConfigSpec.ConfigValue<FeatureStatus> acceleratedEntityRenderingFeatureStatus;
     public final ModConfigSpec.ConfigValue<PipelineSetting> acceleratedEntityRenderingDefaultPipeline;
@@ -25,6 +26,7 @@ public class FeatureConfig {
     public final ModConfigSpec.ConfigValue<FeatureStatus> irisCompatShadowCulling;
     public final ModConfigSpec.ConfigValue<FeatureStatus> irisCompatEntitiesCompat;
     public final ModConfigSpec.ConfigValue<FeatureStatus> irisCompatPolygonProcessing;
+    public final ModConfigSpec.ConfigValue<FeatureStatus> irisCompatFastIrisRenderTypeCheck;
 
     static {
         Pair<FeatureConfig, ModConfigSpec> pair = new ModConfigSpec.Builder().configure(FeatureConfig::new);
@@ -54,11 +56,11 @@ public class FeatureConfig {
                 .translation("acceleratedrendering.configuration.core_settings.pooled_element_buffer_size")
                 .defineInRange("pooled_element_buffer_size", 32, 0, Integer.MAX_VALUE);
 
-        coreUseVanillaBatching = builder
-                .comment("- DISABLED: Unsupported RenderType will fallback to vanilla rendering pipeline.")
-                .comment("- ENABLED: Unsupported RenderType will usea \"vanilla-like\" rendering pipeline that batches draw calls and improves performance.")
-                .translation("acceleratedrendering.configuration.core_settings.use_vanilla_batching")
-                .defineEnum("use_vanilla_batching", FeatureStatus.ENABLED);
+        coreForceTranslucentAcceleration = builder
+                .comment("- DISABLED: Translucent RenderType will fallback to vanilla rendering pipeline if the accelerated pipeline does not support translucent sorting unless mods explicitly enable force translucent acceleration temporarily when rendering their own faces.")
+                .comment("- ENABLED: Translucent RenderType will still be rendered in accelerated pipeline even if the pipeline does not support translucent sorting unless mods explicitly disable force translucent acceleration temporarily when rendering their own faces.")
+                .translation("acceleratedrendering.configuration.core_settings.force_translucent_acceleration")
+                .defineEnum("force_translucent_acceleration", FeatureStatus.DISABLED);
 
         builder.pop();
 
@@ -147,9 +149,15 @@ public class FeatureConfig {
 
         irisCompatPolygonProcessing = builder
                 .comment("- DISABLED: Extra information in vertices provided by Iris will not be included or calculated in the accelerated pipeline, which may cause visual glitches or incorrect rendering.")
-                .comment("- DISABLED: Extra information in vertices provided by Iris will be included and calculated in the accelerated pipeline by a compute shader.")
+                .comment("- ENABLED: Extra information in vertices provided by Iris will be included and calculated in the accelerated pipeline by a compute shader.")
                 .translation("acceleratedrendering.configuration.iris_compatibility.polygon_processing")
                 .defineEnum("polygon_processing", FeatureStatus.ENABLED);
+
+        irisCompatFastIrisRenderTypeCheck = builder
+                .comment("- DISABLED: Accelerated Rendering will use slow but safe \"instanceof\" operation in checking wrapped RenderType created by Iris.")
+                .comment("- ENABlED: Accelerated Rendering will use extension interface in checking wrapped RenderType created by Iris, which is faster but unsafe if other mods also implemented \"WrappableRenderType\".")
+                .translation("acceleratedrendering.configuration.iris_compatability.fast_iris_render_type_check")
+                .defineEnum("fast_iris_render_type_check", FeatureStatus.ENABLED);
 
         builder.pop();
     }
