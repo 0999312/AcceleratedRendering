@@ -1,7 +1,9 @@
 package com.github.argon4w.acceleratedrendering.core.programs.processing;
 
-import com.github.argon4w.acceleratedrendering.core.programs.EmptyProgramDispatcher;
-import com.github.argon4w.acceleratedrendering.core.programs.IPolygonProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.EmptyProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.IPolygonProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.EmptyExtraVertexData;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.IExtraVertexData;
 import com.mojang.blaze3d.vertex.VertexFormat;
 
 public class EmptyPolygonProcessor implements IPolygonProcessor {
@@ -14,12 +16,7 @@ public class EmptyPolygonProcessor implements IPolygonProcessor {
     }
 
     @Override
-    public void addExtraSharings(long address) {
-
-    }
-
-    @Override
-    public void addExtraVertex(long address) {
-
+    public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
+        return EmptyExtraVertexData.INSTANCE;
     }
 }

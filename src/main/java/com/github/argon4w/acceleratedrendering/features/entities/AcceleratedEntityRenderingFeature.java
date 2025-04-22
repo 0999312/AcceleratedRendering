@@ -3,7 +3,6 @@ package com.github.argon4w.acceleratedrendering.features.entities;
 import com.github.argon4w.acceleratedrendering.configs.FeatureConfig;
 import com.github.argon4w.acceleratedrendering.configs.FeatureStatus;
 import com.github.argon4w.acceleratedrendering.configs.PipelineSetting;
-import com.github.argon4w.acceleratedrendering.core.meshes.IMesh;
 import com.github.argon4w.acceleratedrendering.core.meshes.MeshType;
 
 import java.util.ArrayDeque;
@@ -23,10 +22,6 @@ public class AcceleratedEntityRenderingFeature {
 
     public static MeshType getMeshType() {
         return FeatureConfig.CONFIG.acceleratedEntityRenderingMeshType.get();
-    }
-
-    public static IMesh.Builder getMeshBuilder() {
-        return getMeshType().getBuilder();
     }
 
     public static void useVanillaPipeline() {
@@ -51,11 +46,5 @@ public class AcceleratedEntityRenderingFeature {
 
     public static PipelineSetting getDefaultPipelineSetting() {
         return FeatureConfig.CONFIG.acceleratedEntityRenderingDefaultPipeline.get();
-    }
-
-    public static void checkControllerState() {
-        if (!PIPELINE_CONTROLLER_STACK.isEmpty()) {
-            throw new IllegalStateException("Default pipeline Controller stack not empty!");
-        }
     }
 }

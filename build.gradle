@@ -3,7 +3,7 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'maven-publish'
-    id 'net.neoforged.gradle.userdev' version '7.0.145'
+    id 'net.neoforged.gradle.userdev' version '7.0.165'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -30,6 +30,10 @@ repositories {
         filter {
             includeGroup "maven.modrinth"
         }
+    }
+
+    flatDir {
+        dir 'libs'
     }
 }
 
@@ -130,8 +134,9 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html54
-    implementation "maven.modrinth:sodium:mc1.21-0.6.0-beta.1-neoforge"
-    implementation "maven.modrinth:iris:1.8.0-beta.2+1.21-neoforge"
+    implementation "maven.modrinth:sodium:mc1.21.1-0.6.9-neoforge"
+    implementation "maven.modrinth:iris:1.8.8+1.21.1-neoforge"
+    implementation "com.github.tartaricacid:touhoulittlemaid-1.21.1:release-1.2.2"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

@@ -1,8 +1,11 @@
 package com.github.argon4w.acceleratedrendering.core.buffers.accelerated;
 
-import com.github.argon4w.acceleratedrendering.core.buffers.builders.AcceleratedBufferBuilder;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.AcceleratedBufferBuilder;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.DrawContextPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.ElementBufferPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.MappedBufferPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.VertexBufferPool;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.gl.buffers.MappedBuffer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -22,6 +25,7 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
     private final IBufferEnvironment bufferEnvironment;
     private final AcceleratedBufferSetPool acceleratedBufferSetPool;
     private final Map<RenderType, AcceleratedBufferBuilder> acceleratedBuilders;
+    private final Map<RenderType, DrawContextPool.IndirectDrawContext> drawContexts;
 
     private AcceleratedBufferSetPool.BufferSet bufferSet;
 
@@ -31,6 +35,7 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
         this.bufferEnvironment = bufferEnvironment;
         this.acceleratedBufferSetPool = new AcceleratedBufferSetPool(this.bufferEnvironment);
         this.acceleratedBuilders = new Object2ObjectLinkedOpenHashMap<>();
+        this.drawContexts = new Object2ObjectLinkedOpenHashMap<>();
 
         this.bufferSet = acceleratedBufferSetPool.getBufferSet();
     }
@@ -51,8 +56,8 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
     }
 
     @Override
-    public IBufferEnvironment getBufferEnvironment() {
-        return bufferEnvironment;
+    public boolean isAccelerated(RenderType renderType) {
+        return bufferEnvironment.isAccelerated(renderType.format);
     }
 
     @Override
@@ -63,16 +68,23 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             return builder;
         }
 
-        MappedBuffer elementBuffer = bufferSet.getElementBuffer();
+        VertexBufferPool.VertexBuffer vertexBuffer = bufferSet.getVertexBuffer();
+        MappedBufferPool.Pooled varyingBuffer = bufferSet.getVaryingBuffer();
+        ElementBufferPool.ElementSegment elementSegment = bufferSet.getElementSegment();
 
-        if (elementBuffer == null) {
+        if (vertexBuffer == null) {
             drawBuffers();
             clearBuffers();
-            elementBuffer = bufferSet.getElementBuffer();
+
+            vertexBuffer = bufferSet.getVertexBuffer();
+            varyingBuffer = bufferSet.getVaryingBuffer();
+            elementSegment = bufferSet.getElementSegment();
         }
 
         builder = new AcceleratedBufferBuilder(
-                elementBuffer,
+                vertexBuffer,
+                varyingBuffer,
+                elementSegment,
                 bufferSet,
                 renderType
         );
@@ -87,31 +99,43 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             return;
         }
 
-        bufferSet.bindTransformBuffers();
-        bufferEnvironment.selectTransformProgramDispatcher().dispatch(bufferSet.getVertexCount());
+        int program = glGetInteger(GL_CURRENT_PROGRAM);
+        int barrier = 0;
 
-        BufferUploader.invalidate();
-        bufferSet.bindVertexArray();
+        bufferSet.prepare();
+        bufferSet.bindTransformBuffers();
+        bufferEnvironment.selectTransformProgramDispatcher().dispatch(acceleratedBuilders.values());
 
         for (RenderType renderType : acceleratedBuilders.keySet()) {
             AcceleratedBufferBuilder builder = acceleratedBuilders.get(renderType);
-            MappedBuffer elementBuffer = builder.getElementBuffer();
+            ElementBufferPool.ElementSegment elementSegment = builder.getElementSegment();
 
-            if (elementBuffer.getPosition() == 0) {
+            if (builder.isEmpty()) {
                 continue;
             }
 
             VertexFormat.Mode mode = renderType.mode;
-            int vertexCount = builder.getVertexCount();
+            DrawContextPool.IndirectDrawContext drawContext = bufferSet.getDrawContext();
 
-            bufferSet.bindCullingBuffers(elementBuffer);
-            bufferEnvironment.selectProcessingProgramDispatcher(mode).dispatch(mode, vertexCount);
-            bufferEnvironment.selectCullProgramDispatcher(renderType).dispatch(mode, vertexCount);
+            drawContext.bindComputeBuffers(elementSegment);
+            drawContexts.put(renderType, drawContext);
 
+            barrier |= bufferEnvironment.selectProcessingProgramDispatcher(mode).dispatch(builder);
+            barrier |= bufferEnvironment.selectCullProgramDispatcher(renderType).dispatch(builder);
+        }
+
+        glMemoryBarrier(barrier);
+        glUseProgram(program);
+
+        BufferUploader.invalidate();
+        bufferSet.bindVertexArray();
+        bufferSet.bindDrawBuffers();
+
+        for (RenderType renderType : drawContexts.keySet()) {
             renderType.setupRenderState();
-            bufferSet.bindDrawBuffers();
-            bufferEnvironment.setupBufferState();
 
+            DrawContextPool.IndirectDrawContext drawContext = drawContexts.get(renderType);
+            VertexFormat.Mode mode = renderType.mode;
             ShaderInstance shader = RenderSystem.getShader();
 
             shader.setDefaultUniforms(
@@ -122,23 +146,23 @@ public class AcceleratedBufferSource extends MultiBufferSource.BufferSource impl
             );
             shader.apply();
 
-            glDrawElementsIndirect(
-                    mode.asGLMode,
-                    GL_UNSIGNED_INT,
-                    0L
-            );
-            glMemoryBarrier(GL_ELEMENT_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
-
+            drawContext.drawElements(mode);
             shader.clear();
             renderType.clearRenderState();
         }
 
+        DrawContextPool.waitBarriers();
         bufferSet.resetVertexArray();
-        acceleratedBuilders.clear();
     }
 
     @Override
     public void clearBuffers() {
+        if (acceleratedBuilders.isEmpty()) {
+            return;
+        }
+
+        acceleratedBuilders.clear();
+        drawContexts.clear();
         bufferSet.reset();
         bufferSet.setInFlight();
         bufferSet = acceleratedBufferSetPool.getBufferSet();

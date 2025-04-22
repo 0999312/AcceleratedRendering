@@ -1,6 +1,6 @@
 package com.github.argon4w.acceleratedrendering.compat.iris.mixins.acceleratedrendering;
 
-import com.github.argon4w.acceleratedrendering.compat.iris.buffers.IRenderTypeExtension;
+import com.github.argon4w.acceleratedrendering.compat.iris.IAcceleratedUnwrap;
 import com.github.argon4w.acceleratedrendering.compat.iris.IrisCompatFeature;
 import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
 import net.irisshaders.batchedentityrendering.impl.WrappableRenderType;
@@ -14,47 +14,39 @@ public class RenderTypeUtilsMixin {
 
     @ModifyVariable(method = "getTextureLocation", at = @At("HEAD"), ordinal = 0, argsOnly = true)
     private static RenderType unwrapIrisRenderType1(RenderType renderType) {
-        IRenderTypeExtension extension = (IRenderTypeExtension) renderType;
+        IAcceleratedUnwrap fast = (IAcceleratedUnwrap) renderType;
 
-        if (!IrisCompatFeature.isEnabled()) {
-            return renderType;
+        if (IrisCompatFeature.isFastRenderTypeCheckEnabled()) {
+            return fast.unwrapFast();
         }
 
-        if (extension.isFastUnwrapSupported()) {
-            return extension.getOrUnwrap();
+        if (renderType instanceof WrappableRenderType wrapped) {
+            return wrapped.unwrap();
         }
 
-        if (IrisCompatFeature.isFastIrisRenderTypeCheckEnabled()) {
-            return extension.getOrUnwrap();
+        if (fast.isAccelerated()) {
+            return fast.unwrapFast();
         }
 
-        if (!(renderType instanceof WrappableRenderType wrappable)) {
-            return renderType;
-        }
-
-        return wrappable.unwrap();
+        return renderType;
     }
 
     @ModifyVariable(method = "isCulled", at = @At("HEAD"), ordinal = 0, argsOnly = true)
     private static RenderType unwrapIrisRenderType2(RenderType renderType) {
-        IRenderTypeExtension extension = (IRenderTypeExtension) renderType;
+        IAcceleratedUnwrap fast = (IAcceleratedUnwrap) renderType;
 
-        if (!IrisCompatFeature.isEnabled()) {
-            return renderType;
+        if (IrisCompatFeature.isFastRenderTypeCheckEnabled()) {
+            return fast.unwrapFast();
         }
 
-        if (extension.isFastUnwrapSupported()) {
-            return extension.getOrUnwrap();
+        if (renderType instanceof WrappableRenderType wrapped) {
+            return wrapped.unwrap();
         }
 
-        if (IrisCompatFeature.isFastIrisRenderTypeCheckEnabled()) {
-            return extension.getOrUnwrap();
+        if (fast.isAccelerated()) {
+            return fast.unwrapFast();
         }
 
-        if (!(renderType instanceof WrappableRenderType wrappable)) {
-            return renderType;
-        }
-
-        return wrappable.unwrap();
+        return renderType;
     }
 }

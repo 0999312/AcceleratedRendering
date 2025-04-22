@@ -4,7 +4,7 @@ struct Vertex {
     float x;
     float y;
     float z;
-    int color;
+    uint color;
     float u0;
     float v0;
     int uv1;
@@ -17,47 +17,43 @@ struct Vertex {
     uint iris_at_tangent;
 };
 
-struct Polygon {
-    int vertex1;
-    int vertex2;
-    int vertex3;
-    int vertex4;
-    int vertex5;
-    int vertex6;
-};
-
 layout(local_size_x = 128) in;
 
 layout(binding=1, std430) buffer Vertices {
     Vertex vertices[];
 };
 
-layout(binding=5, std430) readonly buffer Polygons {
-    Polygon polygons[];
-};
-
 layout(location=0) uniform uint polygonCount;
+layout(location=1) uniform uint vertexOffset;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
+    uint base = index * 4u;
 
     if (index >= polygonCount) {
         return;
     }
 
-    Polygon polygon = polygons[index];
-    Vertex vertex1 = vertices[polygon.vertex1];
-    Vertex vertex2 = vertices[polygon.vertex2];
-    Vertex vertex3 = vertices[polygon.vertex3];
-    Vertex vertex4 = vertices[polygon.vertex5];
+    uint index1 = vertexOffset + base + 0u;
+    uint index2 = vertexOffset + base + 1u;
+    uint index3 = vertexOffset + base + 2u;
+    uint index4 = vertexOffset + base + 3u;
+
+    Vertex vertex1 = vertices[index1];
+    Vertex vertex2 = vertices[index2];
+    Vertex vertex3 = vertices[index3];
+    Vertex vertex4 = vertices[index4];
 
     vec3 pos1 = vec3(vertex1.x, vertex1.y, vertex1.z);
     vec3 pos2 = vec3(vertex2.x, vertex2.y, vertex2.z);
     vec3 pos3 = vec3(vertex3.x, vertex3.y, vertex3.z);
+    vec3 pos4 = vec3(vertex4.x, vertex4.y, vertex4.z);
+
     vec2 uv1 = vec2(vertex1.u0, vertex1.v0);
     vec2 uv2 = vec2(vertex2.u0, vertex2.v0);
     vec2 uv3 = vec2(vertex3.u0, vertex3.v0);
     vec2 uv4 = vec2(vertex4.u0, vertex4.v0);
+
     vec2 midUV = (uv1 + uv2 + uv3 + uv4) / 4;
     vec3 normal = unpackSnorm4x8(vertex1.normal).xyz;
 
@@ -70,30 +66,24 @@ void main() {
     float fdenom = dUV1.x * dUV2.y - dUV2.x * dUV1.y;
     float f = fdenom == 0.0 ? 1.0 : 1.0 / fdenom;
 
-    vec3 tangent = f * (dUV2.y * edge1 - dUV1.y * edge2);
-    vec3 bitangent = f * (dUV2.x * edge1 - dUV1.x * edge2);
+    vec3 tangent = normalize(f * (dUV2.y * edge1 - dUV1.y * edge2));
+    vec3 aBitangent = normalize(f * (-dUV2.x * edge1 + dUV1.x * edge2));
     vec3 pBitangent = cross(tangent, normal);
-    vec4 tangent4 = vec4(tangent, dot(bitangent, pBitangent) < 0.0 ? -1.0 : 1.0);
+    vec4 tangent4 = vec4(tangent, dot(aBitangent, pBitangent) < 0.0 ? -1.0 : 1.0);
     uint packedTangent = packSnorm4x8(tangent4);
 
-    vertices[polygon.vertex1].iris_at_tangent = packedTangent;
-    vertices[polygon.vertex2].iris_at_tangent = packedTangent;
-    vertices[polygon.vertex3].iris_at_tangent = packedTangent;
-    vertices[polygon.vertex4].iris_at_tangent = packedTangent;
-    vertices[polygon.vertex5].iris_at_tangent = packedTangent;
-    vertices[polygon.vertex6].iris_at_tangent = packedTangent;
+    vertices[index1].iris_at_tangent = packedTangent;
+    vertices[index2].iris_at_tangent = packedTangent;
+    vertices[index3].iris_at_tangent = packedTangent;
+    vertices[index4].iris_at_tangent = packedTangent;
 
-    vertices[polygon.vertex1].iris_midcoord_u = midUV.x;
-    vertices[polygon.vertex2].iris_midcoord_u = midUV.x;
-    vertices[polygon.vertex3].iris_midcoord_u = midUV.x;
-    vertices[polygon.vertex4].iris_midcoord_u = midUV.x;
-    vertices[polygon.vertex5].iris_midcoord_u = midUV.x;
-    vertices[polygon.vertex6].iris_midcoord_u = midUV.x;
+    vertices[index1].iris_midcoord_u = midUV.x;
+    vertices[index2].iris_midcoord_u = midUV.x;
+    vertices[index3].iris_midcoord_u = midUV.x;
+    vertices[index4].iris_midcoord_u = midUV.x;
 
-    vertices[polygon.vertex1].iris_midcoord_v = midUV.y;
-    vertices[polygon.vertex2].iris_midcoord_v = midUV.y;
-    vertices[polygon.vertex3].iris_midcoord_v = midUV.y;
-    vertices[polygon.vertex4].iris_midcoord_v = midUV.y;
-    vertices[polygon.vertex5].iris_midcoord_v = midUV.y;
-    vertices[polygon.vertex6].iris_midcoord_v = midUV.y;
+    vertices[index1].iris_midcoord_v = midUV.y;
+    vertices[index2].iris_midcoord_v = midUV.y;
+    vertices[index3].iris_midcoord_v = midUV.y;
+    vertices[index4].iris_midcoord_v = midUV.y;
 }

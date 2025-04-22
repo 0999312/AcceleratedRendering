@@ -1,16 +1,21 @@
 package com.github.argon4w.acceleratedrendering.core.buffers.accelerated;
 
 import com.github.argon4w.acceleratedrendering.core.CoreFeature;
-import com.github.argon4w.acceleratedrendering.core.buffers.pools.MappedBufferPool;
+import com.github.argon4w.acceleratedrendering.core.backends.Sync;
+import com.github.argon4w.acceleratedrendering.core.backends.VertexArray;
+import com.github.argon4w.acceleratedrendering.core.backends.buffers.MappedBuffer;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.DrawContextPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.ElementBufferPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.MappedBufferPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.VertexBufferPool;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.gl.Sync;
-import com.github.argon4w.acceleratedrendering.core.gl.VertexArray;
-import com.github.argon4w.acceleratedrendering.core.gl.buffers.ImmutableBuffer;
-import com.github.argon4w.acceleratedrendering.core.gl.buffers.MappedBuffer;
-import com.github.argon4w.acceleratedrendering.core.gl.buffers.MutableBuffer;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.IExtraVertexData;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
+import org.apache.commons.lang3.mutable.MutableInt;
 
-import static org.lwjgl.opengl.GL46.*;
+import static org.lwjgl.opengl.GL46.GL_ARRAY_BUFFER;
+import static org.lwjgl.opengl.GL46.GL_SHADER_STORAGE_BUFFER;
 
 public class AcceleratedBufferSetPool {
 
@@ -47,125 +52,105 @@ public class AcceleratedBufferSetPool {
 
     public class BufferSet {
 
-        private final MappedBufferPool elementBufferPool;
+        private final int size;
+        private final DrawContextPool drawContextPool;
+        private final ElementBufferPool elementBufferPool;
         private final MappedBuffer sharingBuffer;
-        private final MappedBuffer varyingBuffer;
-        private final MappedBuffer vertexBufferIn;
-        private final MutableBuffer vertexBufferOut;
-        private final MutableBuffer elementBufferOut;
-        private final ImmutableBuffer commandBuffer;
+        private final MappedBufferPool varyingBuffer;
+        private final VertexBufferPool vertexBuffer;
         private final VertexArray vertexArray;
         private final Sync sync;
+        private final MutableInt sharing;
 
-        private int sharing;
-        private int element;
         private boolean used;
+        private VertexFormat format;
 
         public BufferSet() {
-            this.elementBufferPool = new MappedBufferPool(CoreFeature.getPooledElementBufferSize());
+            this.size = CoreFeature.getPooledElementBufferSize();
+            this.drawContextPool = new DrawContextPool(this.size);
+            this.elementBufferPool = new ElementBufferPool(this.size);
             this.sharingBuffer = new MappedBuffer(64L);
-            this.varyingBuffer = new MappedBuffer(64L);
-            this.vertexBufferIn = new MappedBuffer(64L);
-            this.vertexBufferOut = new MutableBuffer(64L, GL_DYNAMIC_STORAGE_BIT);
-            this.elementBufferOut = new MutableBuffer(64L, GL_DYNAMIC_STORAGE_BIT);
-            this.commandBuffer = new ImmutableBuffer(GL_DYNAMIC_STORAGE_BIT, new int[] {0, 1, 0, 0, 0});
+            this.varyingBuffer = new MappedBufferPool(this.size);
+            this.vertexBuffer = new VertexBufferPool(this.size, this);
             this.vertexArray = new VertexArray();
             this.sync = new Sync();
+            this.sharing = new MutableInt(0);
 
-            this.sharing = -1;
-            this.element = 0;
             this.used = false;
+            this.format = null;
         }
 
         public void reset() {
+            drawContextPool.reset();
             elementBufferPool.reset();
             varyingBuffer.reset();
             sharingBuffer.reset();
-            vertexBufferIn.reset();
+            vertexBuffer.reset();
 
-            sharing = -1;
-            element = 0;
+            sharing.setValue(0);
         }
 
         public void bindTransformBuffers() {
-            vertexBufferOut.resizeTo(vertexBufferIn.getBufferSize());
-            vertexBufferIn.bindBase(GL_SHADER_STORAGE_BUFFER, 0);
-            vertexBufferOut.bindBase(GL_SHADER_STORAGE_BUFFER, 1);
+            vertexBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 1);
             sharingBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 2);
-            varyingBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 3);
             bufferEnvironment.getServerMeshBuffer().bindBase(GL_SHADER_STORAGE_BUFFER, 4);
         }
 
-        public void bindCullingBuffers(MappedBuffer elementBufferIn) {
-            elementBufferOut.resizeTo(elementBufferIn.getBufferSize());
-            commandBuffer.bindBase(GL_ATOMIC_COUNTER_BUFFER, 0);
-            elementBufferIn.bindBase(GL_SHADER_STORAGE_BUFFER, 5);
-            elementBufferOut.bindBase(GL_SHADER_STORAGE_BUFFER, 6);
-        }
-
         public void bindDrawBuffers() {
-            vertexBufferOut.bind(GL_ARRAY_BUFFER);
-            elementBufferOut.bind(GL_ELEMENT_ARRAY_BUFFER);
-            commandBuffer.bind(GL_DRAW_INDIRECT_BUFFER);
+            if (format != bufferEnvironment.getActiveFormat()
+                    || elementBufferPool.isResized()
+                    || vertexBuffer.isResized()) {
+                format = bufferEnvironment.getActiveFormat();
+                elementBufferPool.bindElementBuffer();
+                elementBufferPool.resetResized();
+                vertexBuffer.bind(GL_ARRAY_BUFFER);
+                vertexBuffer.resetResized();
+                bufferEnvironment.setupBufferState();
+            }
+
+            drawContextPool.bindCommandBuffer();
         }
 
-        public int getElement(int count) {
-            int element = this.element;
-            this.element += count;
-
-            return element;
+        public void prepare() {
+            sharingBuffer.flush();
+            vertexBuffer.prepare();
+            elementBufferPool.prepare();
         }
 
-        public MappedBuffer getElementBuffer() {
+        public VertexBufferPool.VertexBuffer getVertexBuffer() {
+            return vertexBuffer.get();
+        }
+
+        public MappedBufferPool.Pooled getVaryingBuffer() {
+            return varyingBuffer.get();
+        }
+
+        public ElementBufferPool.ElementSegment getElementSegment() {
             return elementBufferPool.get();
+        }
+
+        public DrawContextPool.IndirectDrawContext getDrawContext() {
+            return drawContextPool.get();
         }
 
         public int getOffset(VertexFormatElement element) {
             return bufferEnvironment.getOffset(element);
         }
 
-        public int getVertexSize() {
+        public long getVertexSize() {
             return bufferEnvironment.getVertexSize();
         }
 
-        public int getSharingFlags() {
-            return bufferEnvironment.getSharingFlags();
-        }
-
         public int getSharing() {
-            return ++ this.sharing;
-        }
-
-        public int getVertexCount() {
-            return (int) vertexBufferIn.getBufferSize() / bufferEnvironment.getVertexSize();
+            return sharing.getAndIncrement();
         }
 
         public long reserveSharing() {
-            return sharingBuffer.reserve(4L * 4L * 4L + 4L * 4L * 3L + 4L * 4L);
+            return sharingBuffer.reserve(4L * 4L * 4L + 4L * 4L * 3L);
         }
 
-        public long reserveVertex() {
-            return vertexBufferIn.reserve(bufferEnvironment.getVertexSize());
-        }
-
-        public long reservePolygons(long count) {
-            return vertexBufferIn.reserve(bufferEnvironment.getVertexSize() * count);
-        }
-
-        public long reserveVarying() {
-            return varyingBuffer.reserve(5L * 4L);
-        }
-
-        public long reserveVaryings(long count) {
-            return varyingBuffer.reserve(5L * 4L * count);
-        }
-
-        public void addExtraSharings(long address) {
-            bufferEnvironment.addExtraSharings(address);
-        }
-
-        public void addExtraVertex(long address) {
-            bufferEnvironment.addExtraVertex(address);
+        public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
+            return bufferEnvironment.getExtraVertex(mode);
         }
 
         public void bindVertexArray() {
@@ -174,6 +159,10 @@ public class AcceleratedBufferSetPool {
 
         public void resetVertexArray() {
             vertexArray.unbindVertexArray();
+        }
+
+        public int getSize() {
+            return size;
         }
 
         public void setUsed() {

@@ -1,19 +1,24 @@
 package com.github.argon4w.acceleratedrendering.compat.iris.environments;
 
-import com.github.argon4w.acceleratedrendering.compat.iris.buffers.IrisRenderType;
+import com.github.argon4w.acceleratedrendering.compat.iris.IrisRenderType;
+import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.gl.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.meshes.ServerMesh;
-import com.github.argon4w.acceleratedrendering.core.programs.IPolygonProgramDispatcher;
 import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgramSelector;
+import com.github.argon4w.acceleratedrendering.core.programs.culling.LoadCullingProgramSelectorEvent;
+import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.IPolygonProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.TransformProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.CompositeExtraVertex;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.IExtraVertexData;
 import com.github.argon4w.acceleratedrendering.core.programs.processing.IPolygonProcessor;
-import com.github.argon4w.acceleratedrendering.core.programs.transform.ITransformProgramSelector;
-import com.github.argon4w.acceleratedrendering.core.programs.transform.TransformProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.processing.LoadPolygonProcessorEvent;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
-import net.irisshaders.iris.shaderpack.materialmap.WorldRenderingSettings;
+import net.irisshaders.iris.api.v0.IrisApi;
 import net.irisshaders.iris.vertices.ImmediateState;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.fml.ModLoader;
 
 public class IrisBufferEnvironment implements IBufferEnvironment {
 
@@ -23,21 +28,23 @@ public class IrisBufferEnvironment implements IBufferEnvironment {
     public IrisBufferEnvironment(
             IBufferEnvironment vanillaSubSet,
             VertexFormat vanillaVertexFormat,
-            VertexFormat irisVertexFormat
+            VertexFormat irisVertexFormat,
+            ResourceLocation transformProgram
     ) {
         this.vanillaSubSet = vanillaSubSet;
-        this.irisSubSet = new IrisSubSet(vanillaVertexFormat, irisVertexFormat);
+        this.irisSubSet = new IrisSubSet(
+                vanillaVertexFormat,
+                irisVertexFormat,
+                transformProgram
+        );
     }
 
     private boolean shouldUseIrisSubSet() {
-        return WorldRenderingSettings.INSTANCE.shouldUseExtendedVertexFormat()
-                && ImmediateState.isRenderingLevel;
+        return IrisApi.getInstance().isShaderPackInUse() && ImmediateState.isRenderingLevel;
     }
 
     private IBufferEnvironment getSubSet() {
-        return shouldUseIrisSubSet()
-                ? irisSubSet
-                : vanillaSubSet;
+        return shouldUseIrisSubSet() ? irisSubSet : vanillaSubSet;
     }
 
     @Override
@@ -46,13 +53,13 @@ public class IrisBufferEnvironment implements IBufferEnvironment {
     }
 
     @Override
-    public void addExtraSharings(long address) {
-        getSubSet().addExtraSharings(address);
+    public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
+        return getSubSet().getExtraVertex(mode);
     }
 
     @Override
-    public void addExtraVertex(long address) {
-        getSubSet().addExtraVertex(address);
+    public VertexFormat getActiveFormat() {
+        return getSubSet().getActiveFormat();
     }
 
     @Override
@@ -86,11 +93,6 @@ public class IrisBufferEnvironment implements IBufferEnvironment {
     }
 
     @Override
-    public int getSharingFlags() {
-        return getSubSet().getSharingFlags();
-    }
-
-    @Override
     public int getOffset(VertexFormatElement element) {
         return getSubSet().getOffset(element);
     }
@@ -105,17 +107,21 @@ public class IrisBufferEnvironment implements IBufferEnvironment {
         private final VertexFormat vanillaVertexFormat;
         private final VertexFormat irisVertexFormat;
 
-        private final ITransformProgramSelector transformProgramSelector;
+        private final TransformProgramDispatcher transformProgramDispatcher;
         private final ICullingProgramSelector cullingProgramSelector;
         private final IPolygonProcessor polygonProcessor;
 
-        public IrisSubSet(VertexFormat vanillaVertexFormat, VertexFormat irisVertexFormat) {
+        public IrisSubSet(
+                VertexFormat vanillaVertexFormat,
+                VertexFormat irisVertexFormat,
+                ResourceLocation transformProgram
+        ) {
             this.vanillaVertexFormat = vanillaVertexFormat;
             this.irisVertexFormat = irisVertexFormat;
 
-            this.transformProgramSelector = ITransformProgramSelector.get(this.irisVertexFormat);
-            this.cullingProgramSelector = ICullingProgramSelector.get(this.irisVertexFormat);
-            this.polygonProcessor = IPolygonProcessor.get(this.irisVertexFormat);
+            this.transformProgramDispatcher = new TransformProgramDispatcher(transformProgram);
+            this.cullingProgramSelector = ModLoader.postEventWithReturn(new LoadCullingProgramSelectorEvent(this.irisVertexFormat)).getSelector();
+            this.polygonProcessor = ModLoader.postEventWithReturn(new LoadPolygonProcessorEvent(this.irisVertexFormat)).getProcessor();
         }
 
         @Override
@@ -124,29 +130,28 @@ public class IrisBufferEnvironment implements IBufferEnvironment {
         }
 
         @Override
-        public void addExtraSharings(long address) {
-            polygonProcessor.addExtraSharings(address);
-        }
-
-        @Override
-        public void addExtraVertex(long address) {
-            polygonProcessor.addExtraVertex(address);
-        }
-
-        @Override
         public boolean isAccelerated(VertexFormat vertexFormat) {
-            return this.vanillaVertexFormat == vertexFormat
-                    || this.irisVertexFormat == vertexFormat;
+            return this.vanillaVertexFormat == vertexFormat || this.irisVertexFormat == vertexFormat;
+        }
+
+        @Override
+        public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
+            return new CompositeExtraVertex(cullingProgramSelector.getExtraVertex(mode), polygonProcessor.getExtraVertex(mode));
+        }
+
+        @Override
+        public VertexFormat getActiveFormat() {
+            return irisVertexFormat;
         }
 
         @Override
         public IServerBuffer getServerMeshBuffer() {
-            return ServerMesh.Builder.INSTANCE.getStorageBuffer(irisVertexFormat);
+            return ServerMesh.Builder.INSTANCE.storageBuffers.get(irisVertexFormat);
         }
 
         @Override
         public TransformProgramDispatcher selectTransformProgramDispatcher() {
-            return transformProgramSelector.select();
+            return transformProgramDispatcher;
         }
 
         @Override
@@ -161,19 +166,12 @@ public class IrisBufferEnvironment implements IBufferEnvironment {
 
         @Override
         public RenderType getRenderType(RenderType renderType) {
-            return renderType.format == vanillaVertexFormat
-                    ? new IrisRenderType(renderType, irisVertexFormat)
-                    : new IrisRenderType(renderType, renderType.format);
+            return renderType.format == vanillaVertexFormat ? new IrisRenderType(renderType, irisVertexFormat) : new IrisRenderType(renderType, renderType.format);
         }
 
         @Override
         public int getOffset(VertexFormatElement element) {
             return irisVertexFormat.getOffset(element);
-        }
-
-        @Override
-        public int getSharingFlags() {
-            return cullingProgramSelector.getSharingFlags();
         }
 
         @Override

@@ -16,7 +16,7 @@ public class IrisCompatFeature {
     }
 
     public static boolean isIrisCompatCullingEnabled() {
-        return FeatureConfig.CONFIG.irisCompatNormalCullingCompat.get() == FeatureStatus.ENABLED;
+        return FeatureConfig.CONFIG.irisCompatOrientationCullingCompat.get() == FeatureStatus.ENABLED;
     }
 
     public static boolean isShadowCullingEnabled() {
@@ -31,8 +31,8 @@ public class IrisCompatFeature {
         return FeatureConfig.CONFIG.irisCompatEntitiesCompat.get() == FeatureStatus.ENABLED;
     }
 
-    public static boolean isFastIrisRenderTypeCheckEnabled() {
-        return FeatureConfig.CONFIG.irisCompatFastIrisRenderTypeCheck.get() == FeatureStatus.ENABLED;
+    public static boolean isFastRenderTypeCheckEnabled() {
+        return FeatureConfig.CONFIG.irisCompatFastRenderTypeCheck.get() == FeatureStatus.ENABLED;
     }
 
     public static void disableShadowCulling() {
@@ -47,7 +47,7 @@ public class IrisCompatFeature {
         SHADOW_CULLING_CONTROLLER_STACK.push(FeatureStatus.ENABLED);
     }
 
-    public static void enablePolygonProcessing() {
+    public static void forceEnablePolygonProcessing() {
         POLYGON_PROCESSING_CONTROLLER_STACK.push(FeatureStatus.ENABLED);
     }
 
@@ -81,15 +81,5 @@ public class IrisCompatFeature {
 
     public static FeatureStatus getDefaultPolygonProcessingSetting() {
         return FeatureConfig.CONFIG.irisCompatPolygonProcessing.get();
-    }
-
-    public static void checkControllerState() {
-        if (!SHADOW_CULLING_CONTROLLER_STACK.isEmpty()) {
-            throw new IllegalStateException("Shadow Culling Controller stack not empty!");
-        }
-
-        if (!POLYGON_PROCESSING_CONTROLLER_STACK.isEmpty()) {
-            throw new IllegalStateException("Polygon Processing Controller stack not empty!");
-        }
     }
 }

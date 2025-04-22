@@ -1,26 +1,34 @@
 package com.github.argon4w.acceleratedrendering.compat.iris.programs.culling;
 
 import com.github.argon4w.acceleratedrendering.compat.iris.IrisCompatFeature;
-import com.github.argon4w.acceleratedrendering.core.programs.IPolygonProgramDispatcher;
 import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgramSelector;
+import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.IPolygonProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.FlagsExtraVertexData;
+import com.github.argon4w.acceleratedrendering.core.programs.extras.IExtraVertexData;
 import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
-import com.github.argon4w.acceleratedrendering.features.culling.NormalCullingFeature;
+import com.github.argon4w.acceleratedrendering.features.culling.OrientationCullingFeature;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.irisshaders.iris.shadows.ShadowRenderingState;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 
 public class IrisCullingProgramSelector implements ICullingProgramSelector {
 
+    public static final FlagsExtraVertexData EMPTY = new FlagsExtraVertexData();
+    public static final FlagsExtraVertexData NO_CULL = new FlagsExtraVertexData(0);
+
     private final ICullingProgramSelector parent;
+    private final VertexFormat.Mode mode;
     private final IPolygonProgramDispatcher dispatcher;
 
-    public IrisCullingProgramSelector(ICullingProgramSelector parent, IPolygonProgramDispatcher dispatcher) {
+    public IrisCullingProgramSelector(
+            ICullingProgramSelector parent,
+            VertexFormat.Mode mode,
+            ResourceLocation key
+    ) {
         this.parent = parent;
-        this.dispatcher = dispatcher;
-    }
-
-    public IrisCullingProgramSelector(ICullingProgramSelector parent, ResourceLocation key) {
-        this(parent, new IrisCullingProgramDispatcher(key));
+        this.mode = mode;
+        this.dispatcher = new IrisCullingProgramDispatcher(mode, key);
     }
 
     @Override
@@ -37,11 +45,15 @@ public class IrisCullingProgramSelector implements ICullingProgramSelector {
             return parent.select(renderType);
         }
 
-        if (!NormalCullingFeature.isEnabled()) {
+        if (!OrientationCullingFeature.isEnabled()) {
             return parent.select(renderType);
         }
 
-        if (NormalCullingFeature.shouldIgnoreCullState()) {
+        if (this.mode != renderType.mode) {
+            return parent.select(renderType);
+        }
+
+        if (OrientationCullingFeature.shouldIgnoreCullState()) {
             return dispatcher;
         }
 
@@ -53,27 +65,31 @@ public class IrisCullingProgramSelector implements ICullingProgramSelector {
     }
 
     @Override
-    public int getSharingFlags() {
+    public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
         if (!IrisCompatFeature.isEnabled()) {
-            return parent.getSharingFlags();
+            return parent.getExtraVertex(mode);
         }
 
         if (!IrisCompatFeature.isIrisCompatCullingEnabled()) {
-            return parent.getSharingFlags();
+            return parent.getExtraVertex(mode);
+        }
+
+        if (!OrientationCullingFeature.isEnabled()) {
+            return parent.getExtraVertex(mode);
+        }
+
+        if (this.mode != mode) {
+            return parent.getExtraVertex(mode);
         }
 
         if (!IrisCompatFeature.isShadowCullingEnabled() && ShadowRenderingState.areShadowsCurrentlyBeingRendered()) {
-            return parent.getSharingFlags();
+            return EMPTY;
         }
 
-        if (!NormalCullingFeature.isEnabled()) {
-            return parent.getSharingFlags();
+        if (!OrientationCullingFeature.shouldCull()) {
+            return NO_CULL;
         }
 
-        if (!NormalCullingFeature.shouldCull()) {
-            return parent.getSharingFlags() | 0b1;
-        }
-
-        return parent.getSharingFlags();
+        return EMPTY;
     }
 }

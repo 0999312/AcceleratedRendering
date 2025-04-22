@@ -1,7 +1,7 @@
 package com.github.argon4w.acceleratedrendering.core.programs;
 
-import com.github.argon4w.acceleratedrendering.core.gl.programs.ComputeProgram;
-import com.github.argon4w.acceleratedrendering.core.gl.programs.ComputeShader;
+import com.github.argon4w.acceleratedrendering.core.backends.programs.ComputeProgram;
+import com.github.argon4w.acceleratedrendering.core.backends.programs.ComputeShader;
 import com.google.common.collect.ImmutableMap;
 import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
@@ -21,14 +21,11 @@ import java.util.Optional;
 
 public class ComputeShaderProgramLoader extends SimplePreparableReloadListener<Map<ResourceLocation, ComputeShaderProgramLoader.ShaderSource>> {
 
-    private static final Map<ResourceLocation, ComputeProgram> COMPUTE_SHADER_HANDLES = new Object2ObjectOpenHashMap<>();
+    private static final Map<ResourceLocation, ComputeProgram> COMPUTE_SHADERS = new Object2ObjectOpenHashMap<>();
     static final ComputeShaderProgramLoader INSTANCE = new ComputeShaderProgramLoader();
 
     @Override
-    protected Map<ResourceLocation, ComputeShaderProgramLoader.ShaderSource> prepare(
-            ResourceManager resourceManager,
-            ProfilerFiller profiler
-    ) {
+    protected Map<ResourceLocation, ComputeShaderProgramLoader.ShaderSource> prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
         try {
             ImmutableMap.Builder<ResourceLocation, ShaderDefinition> builder = ImmutableMap.builder();
             ModLoader.postEvent(new LoadComputeShaderEvent(builder));
@@ -52,10 +49,7 @@ public class ComputeShaderProgramLoader extends SimplePreparableReloadListener<M
                 }
 
                 try (InputStream stream = resource.get().open()) {
-                    shaderSources.put(key, new ShaderSource(
-                            new String(stream.readAllBytes(), StandardCharsets.UTF_8),
-                            barrierFlags
-                    ));
+                    shaderSources.put(key, new ShaderSource(new String(stream.readAllBytes(), StandardCharsets.UTF_8), barrierFlags));
                 }
             }
 
@@ -94,7 +88,7 @@ public class ComputeShaderProgramLoader extends SimplePreparableReloadListener<M
                     }
 
                     computeShader.delete();
-                    COMPUTE_SHADER_HANDLES.put(key, program);
+                    COMPUTE_SHADERS.put(key, program);
                 } catch (Exception e) {
                     throw new ReportedException(CrashReport.forThrowable(e, "Exception while compiling/linking compute shader"));
                 }
@@ -103,7 +97,7 @@ public class ComputeShaderProgramLoader extends SimplePreparableReloadListener<M
     }
 
     public static ComputeProgram getProgram(ResourceLocation resourceLocation) {
-        ComputeProgram program = COMPUTE_SHADER_HANDLES.get(resourceLocation);
+        ComputeProgram program = COMPUTE_SHADERS.get(resourceLocation);
 
         if (program == null) {
             throw new IllegalStateException("Get shader program \""+ resourceLocation + "\" too early! Program is not loaded yet!");
