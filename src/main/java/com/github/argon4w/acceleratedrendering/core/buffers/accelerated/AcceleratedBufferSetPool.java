@@ -3,202 +3,227 @@ package com.github.argon4w.acceleratedrendering.core.buffers.accelerated;
 import com.github.argon4w.acceleratedrendering.core.CoreFeature;
 import com.github.argon4w.acceleratedrendering.core.backends.Sync;
 import com.github.argon4w.acceleratedrendering.core.backends.VertexArray;
+import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.backends.buffers.MappedBuffer;
-import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.DrawContextPool;
-import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.ElementBufferPool;
-import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.MappedBufferPool;
-import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.VertexBufferPool;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.AcceleratedBufferBuilder;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.*;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
+import com.github.argon4w.acceleratedrendering.core.buffers.memory.IMemoryLayout;
 import com.github.argon4w.acceleratedrendering.core.programs.extras.IExtraVertexData;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import lombok.Getter;
+import net.minecraft.client.renderer.RenderType;
 import org.apache.commons.lang3.mutable.MutableInt;
 
+import java.util.Arrays;
+import java.util.Map;
+
+import static org.lwjgl.opengl.GL15.GL_ELEMENT_ARRAY_BUFFER;
+import static org.lwjgl.opengl.GL40.GL_DRAW_INDIRECT_BUFFER;
 import static org.lwjgl.opengl.GL46.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL46.GL_SHADER_STORAGE_BUFFER;
 
 public class AcceleratedBufferSetPool {
 
-    private final IBufferEnvironment bufferEnvironment;
-    private final BufferSet[] bufferSets;
-    private final int size;
+	private final	IBufferEnvironment	bufferEnvironment;
 
-    public AcceleratedBufferSetPool(IBufferEnvironment bufferEnvironment) {
-        this.bufferEnvironment = bufferEnvironment;
-        this.size = CoreFeature.getPooledBufferSetSize();
-        this.bufferSets = new BufferSet[this.size];
+	private			BufferSet[]			bufferSets;
+	private			int					size;
 
-        for (int i = 0; i < this.size; i++) {
-            this.bufferSets[i] = new BufferSet();
-        }
-    }
+	public AcceleratedBufferSetPool(IBufferEnvironment bufferEnvironment) {
+		this.bufferEnvironment	= bufferEnvironment;
+		this.size				= CoreFeature.getPooledBufferSetSize();
+		this.bufferSets			= new BufferSet[this.size];
 
-    public BufferSet getBufferSet() {
-        for (int i = 0; i < size; i++) {
-            BufferSet buffer = bufferSets[i];
+		for (var i = 0; i < this.size; i++) {
+			this.bufferSets[i] = new BufferSet();
+		}
+	}
 
-            if (buffer.isFree()) {
-                buffer.setUsed();
-                return buffer;
-            }
-        }
+	public BufferSet getBufferSet(boolean force) {
+		for (var i = 0; i < size; i++) {
+			var buffer = bufferSets[i];
 
-        BufferSet bufferSet = bufferSets[0];
-        bufferSet.waitSync();
-        bufferSet.setUsed();
+			if (buffer.isFree()) {
+				buffer.setUsed();
+				return buffer;
+			}
+		}
 
-        return bufferSet;
-    }
+		var index = 0;
 
-    public class BufferSet {
+		if (force) {
+			index		= size;
+			size		= size * 2;
+			bufferSets	= Arrays.copyOf(bufferSets, size);
 
-        private final int size;
-        private final DrawContextPool drawContextPool;
-        private final ElementBufferPool elementBufferPool;
-        private final MappedBuffer sharingBuffer;
-        private final MappedBufferPool varyingBuffer;
-        private final VertexBufferPool vertexBuffer;
-        private final VertexArray vertexArray;
-        private final Sync sync;
-        private final MutableInt sharing;
+			for (var i = index; i < size; i++) {
+				bufferSets[i] = new BufferSet();
+			}
+		}
 
-        private boolean used;
-        private VertexFormat format;
+		var bufferSet = bufferSets[index];
+		bufferSet.waitSync	();
+		bufferSet.setUsed	();
 
-        public BufferSet() {
-            this.size = CoreFeature.getPooledElementBufferSize();
-            this.drawContextPool = new DrawContextPool(this.size);
-            this.elementBufferPool = new ElementBufferPool(this.size);
-            this.sharingBuffer = new MappedBuffer(64L);
-            this.varyingBuffer = new MappedBufferPool(this.size);
-            this.vertexBuffer = new VertexBufferPool(this.size, this);
-            this.vertexArray = new VertexArray();
-            this.sync = new Sync();
-            this.sharing = new MutableInt(0);
+		return bufferSet;
+	}
 
-            this.used = false;
-            this.format = null;
-        }
+	public class BufferSet {
 
-        public void reset() {
-            drawContextPool.reset();
-            elementBufferPool.reset();
-            varyingBuffer.reset();
-            sharingBuffer.reset();
-            vertexBuffer.reset();
+		public static	final	int											VERTEX_BUFFER_OUT_INDEX		= 1;
+		public static	final	int											SHARING_BUFFER_INDEX		= 2;
+		public static	final	int											VARYING_BUFFER_OUT_INDEX	= 4;
 
-            sharing.setValue(0);
-        }
+		private			final	MeshUploaderPool							meshUploaderPool;
+		private			final 	DrawContextPool								drawContextPool;
+		private			final 	ElementBufferPool							elementBufferPool;
+		private			final 	MappedBuffer								sharingBuffer;
+		private			final 	StagingBufferPool							varyingBuffer;
+		private			final	StagingBufferPool							vertexBuffer;
+		private			final 	VertexArray									vertexArray;
+		private			final 	Sync										sync;
+		private			final 	MutableInt									sharing;
+		@Getter	private	final	Map<RenderType, AcceleratedBufferBuilder>	builders;
 
-        public void bindTransformBuffers() {
-            vertexBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 1);
-            sharingBuffer.bindBase(GL_SHADER_STORAGE_BUFFER, 2);
-            bufferEnvironment.getServerMeshBuffer().bindBase(GL_SHADER_STORAGE_BUFFER, 4);
-        }
+		private 				boolean								used;
+		private 				IMemoryLayout<VertexFormatElement>	layout;
 
-        public void bindDrawBuffers() {
-            if (format != bufferEnvironment.getActiveFormat()
-                    || elementBufferPool.isResized()
-                    || vertexBuffer.isResized()) {
-                format = bufferEnvironment.getActiveFormat();
-                elementBufferPool.bindElementBuffer();
-                elementBufferPool.resetResized();
-                vertexBuffer.bind(GL_ARRAY_BUFFER);
-                vertexBuffer.resetResized();
-                bufferEnvironment.setupBufferState();
-            }
+		public BufferSet() {
+			var size				= CoreFeature.getPooledElementBufferSize();
+			this.meshUploaderPool	= new MeshUploaderPool					(this);
+			this.drawContextPool	= new DrawContextPool					(size);
+			this.elementBufferPool	= new ElementBufferPool					(size);
+			this.sharingBuffer		= new MappedBuffer						(64L);
+			this.varyingBuffer		= new StagingBufferPool					(size, this);
+			this.vertexBuffer		= new StagingBufferPool					(size, this);
+			this.vertexArray		= new VertexArray						();
+			this.sync				= new Sync								();
+			this.sharing			= new MutableInt						(0);
+			this.builders			= new Object2ObjectLinkedOpenHashMap<>	();
 
-            drawContextPool.bindCommandBuffer();
-        }
+			this.used = false;
+		}
 
-        public void prepare() {
-            sharingBuffer.flush();
-            vertexBuffer.prepare();
-            elementBufferPool.prepare();
-        }
+		public void reset() {
+			vertexArray			.unbindVertexArray	();
+			meshUploaderPool	.reset				();
+			drawContextPool		.reset				();
+			elementBufferPool	.reset				();
+			varyingBuffer		.reset				();
+			sharingBuffer		.reset				();
+			vertexBuffer		.reset				();
+			sharing				.setValue			(0);
+			builders			.clear				();
+		}
 
-        public VertexBufferPool.VertexBuffer getVertexBuffer() {
-            return vertexBuffer.get();
-        }
+		public void bindTransformBuffers() {
+			vertexBuffer	.getBufferOut()	.bindBase(GL_SHADER_STORAGE_BUFFER, VERTEX_BUFFER_OUT_INDEX);
+			varyingBuffer	.getBufferOut()	.bindBase(GL_SHADER_STORAGE_BUFFER, VARYING_BUFFER_OUT_INDEX);
+			sharingBuffer					.bindBase(GL_SHADER_STORAGE_BUFFER, SHARING_BUFFER_INDEX);
+		}
 
-        public MappedBufferPool.Pooled getVaryingBuffer() {
-            return varyingBuffer.get();
-        }
+		public void bindDrawBuffers() {
+			vertexArray					.bindVertexArray();
+			drawContextPool.getContext().bind			(GL_DRAW_INDIRECT_BUFFER);
 
-        public ElementBufferPool.ElementSegment getElementSegment() {
-            return elementBufferPool.get();
-        }
+			if (		!	bufferEnvironment	.getLayout			()	.equals		(layout)
+					||		elementBufferPool	.getElementBufferOut()	.isResized	()
+					||		vertexBuffer		.getBufferOut		()	.isResized	()) {
+				layout = bufferEnvironment						.getLayout			();
+				elementBufferPool	.getElementBufferOut()		.bind				(GL_ELEMENT_ARRAY_BUFFER);
+				elementBufferPool	.getElementBufferOut()		.resetResized		();
+				vertexBuffer		.getBufferOut()				.bind				(GL_ARRAY_BUFFER);
+				vertexBuffer		.getBufferOut()				.resetResized		();
+				bufferEnvironment								.setupBufferState	();
+			}
+		}
 
-        public DrawContextPool.IndirectDrawContext getDrawContext() {
-            return drawContextPool.get();
-        }
+		public void prepare() {
+			vertexBuffer		.prepare();
+			elementBufferPool	.prepare();
+		}
 
-        public int getOffset(VertexFormatElement element) {
-            return bufferEnvironment.getOffset(element);
-        }
+		public MeshUploaderPool.MeshUploader getMeshUploader() {
+			return meshUploaderPool.get();
+		}
 
-        public long getVertexSize() {
-            return bufferEnvironment.getVertexSize();
-        }
+		public StagingBufferPool.StagingBuffer getVertexBuffer() {
+			return vertexBuffer.get();
+		}
 
-        public int getSharing() {
-            return sharing.getAndIncrement();
-        }
+		public StagingBufferPool.StagingBuffer getVaryingBuffer() {
+			return varyingBuffer.get();
+		}
 
-        public long reserveSharing() {
-            return sharingBuffer.reserve(4L * 4L * 4L + 4L * 4L * 3L);
-        }
+		public ElementBufferPool.ElementSegment getElementSegment() {
+			return elementBufferPool.get();
+		}
 
-        public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
-            return bufferEnvironment.getExtraVertex(mode);
-        }
+		public DrawContextPool.IndirectDrawContext getDrawContext() {
+			return drawContextPool.get();
+		}
 
-        public void bindVertexArray() {
-            vertexArray.bindVertexArray();
-        }
+		public IServerBuffer getElementBuffer() {
+			return elementBufferPool.getElementBufferOut();
+		}
 
-        public void resetVertexArray() {
-            vertexArray.unbindVertexArray();
-        }
+		public long getVertexSize() {
+			return bufferEnvironment.getVertexSize();
+		}
 
-        public int getSize() {
-            return size;
-        }
+		public int getSharing() {
+			return sharing.getAndIncrement();
+		}
 
-        public void setUsed() {
-            used = true;
-        }
+		public long reserveSharing() {
+			return sharingBuffer.reserve(4L * 4L * 4L + 4L * 4L * 3L);
+		}
 
-        public void setInFlight() {
-            used = false;
-            sync.setSync();
-        }
+		public IExtraVertexData getExtraVertex(VertexFormat.Mode mode) {
+			return bufferEnvironment.getExtraVertex(mode);
+		}
 
-        protected void waitSync() {
-            if (!sync.isSyncSet()) {
-                return;
-            }
+		public IMemoryLayout<VertexFormatElement> getLayout() {
+			return bufferEnvironment.getLayout();
+		}
 
-            sync.waitSync();
-            sync.resetSync();
-        }
+		public void setUsed() {
+			used = true;
+		}
 
-        public boolean isFree() {
-            if (used) {
-                return false;
-            }
+		public void setInFlight() {
+			used = false;
+			sync.setSync();
+		}
 
-            if (!sync.isSyncSet()) {
-                return true;
-            }
+		protected void waitSync() {
+			if (!sync.isSyncSet()) {
+				return;
+			}
 
-            if (!sync.isSyncSignaled()) {
-                return false;
-            }
+			sync.waitSync	();
+			sync.resetSync	();
+		}
 
-            sync.resetSync();
+		public boolean isFree() {
+			if (used) {
+				return false;
+			}
 
-            return true;
-        }
-    }
+			if (!sync.isSyncSet()) {
+				return true;
+			}
+
+			if (!sync.isSyncSignaled()) {
+				return false;
+			}
+
+			sync.resetSync();
+
+			return true;
+		}
+	}
 }

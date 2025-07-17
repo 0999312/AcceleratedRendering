@@ -1,59 +1,78 @@
 package com.github.argon4w.acceleratedrendering.core.utils;
 
+import lombok.Getter;
+
+import java.util.Arrays;
+
 public abstract class SimpleResetPool<T, C> {
 
-    private final int size;
-    private final Object[] pool;
-    private final C context;
+	@Getter protected final	C			context;
 
-    private int cursor;
+	private					int			cursor;
+	protected 				int			size;
+	protected				Object[]	pool;
 
-    public SimpleResetPool(int size, C context) {
-        this.size = size;
-        this.pool = new Object[size];
-        this.context = context;
+	public SimpleResetPool(int size, C context) {
+		this.size		= size;
+		this.pool		= new Object[size];
+		this.context	= context;
 
-        this.cursor = 0;
+		this.cursor		= 0;
 
-        for (int i = 0; i < this.size; i++) {
-            this.pool[i] = create(this.context, i);
-        }
-    }
+		for (var i = 0; i < this.size; i++) {
+			this.pool[i] = create(this.context, i);
+		}
+	}
 
-    protected abstract T create(C context, int i);
-    protected abstract void reset(T t);
-    protected abstract void delete(T t);
+	protected abstract T	create	(C context, int i);
+	protected abstract void	reset	(T t);
+	protected abstract void	delete	(T t);
 
-    @SuppressWarnings("unchecked")
-    public T get() {
-        if (cursor < size) {
-            return (T) pool[cursor ++];
-        }
+	@SuppressWarnings("unchecked")
+	public T get() {
+		if (cursor < size) {
+			var t = (T) pool[cursor ++];
 
-        return fail();
-    }
+			if (test(t)) {
+				return t;
+			}
+		}
 
-    @SuppressWarnings("unchecked")
-    public void reset() {
-        for (int i = 0; i < cursor; i++) {
-            reset((T) pool[i]);
-        }
+		return fail();
+	}
 
-        cursor = 0;
-    }
+	@SuppressWarnings("unchecked")
+	public void reset() {
+		for (var i = 0; i < cursor; i++) {
+			reset((T) pool[i]);
+		}
 
-    @SuppressWarnings("unchecked")
-    public void delete() {
-        for (int i = 0; i < size; i++) {
-            delete((T) pool[i]);
-        }
-    }
+		cursor = 0;
+	}
 
-    public T fail() {
-        return null;
-    }
+	@SuppressWarnings("unchecked")
+	public void delete() {
+		for (var i = 0; i < size; i++) {
+			delete((T) pool[i]);
+		}
+	}
 
-    public C getContext() {
-        return context;
-    }
+	protected void expand() {
+		var old	= size;
+
+		size	= old * 2;
+		pool	= Arrays.copyOf(pool, size);
+
+		for (var i = old; i < size; i ++) {
+			pool[i] = create(context, i);
+		}
+	}
+
+	public T fail() {
+		return null;
+	}
+
+	public boolean test(T t) {
+		return true;
+	}
 }

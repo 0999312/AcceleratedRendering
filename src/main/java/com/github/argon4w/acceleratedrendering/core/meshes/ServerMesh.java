@@ -1,89 +1,76 @@
 package com.github.argon4w.acceleratedrendering.core.meshes;
 
-import com.github.argon4w.acceleratedrendering.core.backends.buffers.MappedBuffer;
+import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
+import com.github.argon4w.acceleratedrendering.core.backends.buffers.MutableBuffer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
-import com.github.argon4w.acceleratedrendering.core.meshes.collectors.MeshCollector;
-import com.github.argon4w.acceleratedrendering.core.utils.LazyMap;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import org.lwjgl.system.MemoryUtil;
+import com.github.argon4w.acceleratedrendering.core.meshes.collectors.IMeshCollector;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
+import java.util.List;
 
-public class ServerMesh implements IMesh {
+import static org.lwjgl.opengl.GL44.GL_DYNAMIC_STORAGE_BIT;
 
-    private final int size;
-    private final int offset;
+public record ServerMesh(long size, IServerBuffer meshBuffer) implements IMesh {
 
-    public ServerMesh(int size, int offset) {
-        this.size = size;
-        this.offset = offset;
-    }
+	@Override
+	public void write(
+			IAcceleratedVertexConsumer extension,
+			int color,
+			int light,
+			int overlay
+	) {
+		extension.addServerMesh(
+				this,
+				color,
+				light,
+				overlay
+		);
+	}
 
-    @Override
-    public void write(
-            IAcceleratedVertexConsumer extension,
-            int color,
-            int light,
-            int overlay
-    ) {
-        extension.addServerMesh(
-                offset,
-                size,
-                color,
-                light,
-                overlay
-        );
-    }
+	public static class Builder implements IMesh.Builder {
 
-    public static class Builder implements IMesh.Builder {
+		public static final Builder INSTANCE = new Builder();
 
-        public static final Builder INSTANCE = new Builder();
+		private final List<ServerMesh> meshes;
 
-        public final Map<VertexFormat, MappedBuffer> storageBuffers;
+		private Builder() {
+			this.meshes = new ObjectArrayList<>();
+		}
 
-        private Builder() {
-            this.storageBuffers = new LazyMap<>(() -> new MappedBuffer(1024L, true));
-        }
+		@Override
+		public IMesh build(IMeshCollector collector) {
+			var vertexCount = collector.getVertexCount();
 
-        @Override
-        public IMesh build(MeshCollector collector) {
-            int vertexCount = collector.getVertexCount();
+			if (vertexCount == 0) {
+				return EmptyMesh.INSTANCE;
+			}
 
-            if (vertexCount == 0) {
-                return EmptyMesh.INSTANCE;
-            }
+			var builder	= collector	.getBuffer	();
+			var result	= builder	.build		();
 
-            ByteBufferBuilder builder = collector.getBuffer();
-            ByteBufferBuilder.Result result = builder.build();
+			if (result == null) {
+				builder.close();
+				return EmptyMesh.INSTANCE;
+			}
 
-            if (result == null) {
-                builder.close();
-                return EmptyMesh.INSTANCE;
-            }
+			var clientBuffer	= result.byteBuffer	();
+			var serverBuffer	= new MutableBuffer	(clientBuffer.capacity(),	GL_DYNAMIC_STORAGE_BIT);
+			var mesh			= new ServerMesh	(vertexCount,				serverBuffer);
 
-            ByteBuffer clientBuffer = result.byteBuffer();
-            MappedBuffer serverBuffer = storageBuffers.get(collector.getVertexFormat());
+			meshes		.add	(mesh);
+			serverBuffer.data	(clientBuffer);
+			builder		.close	();
 
-            long capacity = clientBuffer.capacity();
-            long position = serverBuffer.getPosition();
+			return mesh;
+		}
 
-            MemoryUtil.memCopy(
-                    MemoryUtil.memAddress0(clientBuffer),
-                    serverBuffer.reserve(capacity),
-                    capacity
-            );
-
-            builder.close();
-            return new ServerMesh(vertexCount, (int) position);
-        }
-
-        @Override
-        public void close() {
-            for (MappedBuffer buffer : storageBuffers.values()) {
-                buffer.delete();
-            }
-        }
-    }
+		@Override
+		public void close() {
+			for (var mesh : meshes) {
+				mesh
+						.meshBuffer
+						.delete();
+			}
+		}
+	}
 }
